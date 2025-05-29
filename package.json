@@ -31,7 +31,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "yalc-publish": "bun run build && yalc publish",
-    "dev": "vite","preview": "vite preview"
+    "dev": "vite",
+    "preview": "vite preview"
   },
   "devDependencies": {
     "@babel/cli": "^7.27.2",
@@ -92,5 +93,7 @@
     "unified": "^11.0.5",
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.7"
-  }
+  },
+  "name": "webgl-fluid-simulation",
+  "private": true
 }
