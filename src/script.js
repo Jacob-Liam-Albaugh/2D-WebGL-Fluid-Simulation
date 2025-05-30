@@ -26,8 +26,16 @@ SOFTWARE.
 
 // Import managers
 import { applyBloom, initBloomFramebuffers, initBloomShaders } from './bloomManager';
-import { getRandomColor, setColorScheme } from './colorManager';
-import { handlePointerSplat, initSplatShaders } from './splatManager';
+import { drawColor as drawBackgroundColor, getRandomColor, initColorShaders, setColorScheme } from './colorManager';
+import {
+    applyCurl,
+    applyDivergence,
+    applyGradientSubtract,
+    applyPressure,
+    applyVorticity,
+    initPhysicsShaders
+} from './physicsManager';
+import { applyAdvection, handlePointerSplat, initSplatShaders } from './splatManager';
 import { applySunrays, applySunraysBlur, initSunraysFramebuffers, initSunraysShaders } from './sunraysManager';
 
 // Simulation section
@@ -313,17 +321,6 @@ const clearShader = compileShader(gl.FRAGMENT_SHADER, `
     }
 `);
 
-const colorShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-
-    uniform vec4 color;
-
-    void main () {
-        gl_FragColor = color;
-    }
-`);
-
-
 const displayShaderSource = `
     precision highp float;
     precision highp sampler2D;
@@ -348,7 +345,6 @@ const displayShaderSource = `
     void main () {
         vec3 c = texture2D(uTexture, vUv).rgb;
 
-    #ifdef SHADING
         vec3 lc = texture2D(uTexture, vL).rgb;
         vec3 rc = texture2D(uTexture, vR).rgb;
         vec3 tc = texture2D(uTexture, vT).rgb;
@@ -362,201 +358,24 @@ const displayShaderSource = `
 
         float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
         c *= diffuse;
-    #endif
 
-    #ifdef BLOOM
         vec3 bloom = texture2D(uBloom, vUv).rgb;
-    #endif
 
-    #ifdef SUNRAYS
         float sunrays = texture2D(uSunrays, vUv).r;
         c *= sunrays;
-    #ifdef BLOOM
         bloom *= sunrays;
-    #endif
-    #endif
 
-    #ifdef BLOOM
         float noise = texture2D(uDithering, vUv * ditherScale).r;
         noise = noise * 2.0 - 1.0;
         bloom += noise / 255.0;
         bloom = linearToGamma(bloom);
         c += bloom;
-    #endif
 
         float a = max(c.r, max(c.g, c.b));
         gl_FragColor = vec4(c, a);
     }
 `;
 
-const advectionShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision highp float;
-    precision highp sampler2D;
-
-    varying vec2 vUv;
-    uniform sampler2D uVelocity;
-    uniform sampler2D uSource;
-    uniform vec2 texelSize;
-    uniform vec2 dyeTexelSize;
-    uniform float dt;
-    uniform float dissipation;
-
-    vec4 bilerp (sampler2D sam, vec2 uv, vec2 tsize) {
-        vec2 st = uv / tsize - 0.5;
-
-        vec2 iuv = floor(st);
-        vec2 fuv = fract(st);
-
-        vec4 a = texture2D(sam, (iuv + vec2(0.5, 0.5)) * tsize);
-        vec4 b = texture2D(sam, (iuv + vec2(1.5, 0.5)) * tsize);
-        vec4 c = texture2D(sam, (iuv + vec2(0.5, 1.5)) * tsize);
-        vec4 d = texture2D(sam, (iuv + vec2(1.5, 1.5)) * tsize);
-
-        return mix(mix(a, b, fuv.x), mix(c, d, fuv.x), fuv.y);
-    }
-
-    void main () {
-    #ifdef MANUAL_FILTERING
-        vec2 coord = vUv - dt * bilerp(uVelocity, vUv, texelSize).xy * texelSize;
-        vec4 result = bilerp(uSource, coord, dyeTexelSize);
-    #else
-        vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
-        vec4 result = texture2D(uSource, coord);
-    #endif
-        float decay = 1.0 + dissipation * dt;
-        gl_FragColor = result / decay;
-    }`,
-    ext.supportLinearFiltering ? null : ['MANUAL_FILTERING']
-);
-
-const divergenceShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    precision mediump sampler2D;
-
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
-    uniform sampler2D uVelocity;
-
-    void main () {
-        float L = texture2D(uVelocity, vL).x;
-        float R = texture2D(uVelocity, vR).x;
-        float T = texture2D(uVelocity, vT).y;
-        float B = texture2D(uVelocity, vB).y;
-
-        vec2 C = texture2D(uVelocity, vUv).xy;
-        if (vL.x < 0.0) { L = -C.x; }
-        if (vR.x > 1.0) { R = -C.x; }
-        if (vT.y > 1.0) { T = -C.y; }
-        if (vB.y < 0.0) { B = -C.y; }
-
-        float div = 0.5 * (R - L + T - B);
-        gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
-    }
-`);
-
-const curlShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    precision mediump sampler2D;
-
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
-    uniform sampler2D uVelocity;
-
-    void main () {
-        float L = texture2D(uVelocity, vL).y;
-        float R = texture2D(uVelocity, vR).y;
-        float T = texture2D(uVelocity, vT).x;
-        float B = texture2D(uVelocity, vB).x;
-        float vorticity = R - L - T + B;
-        gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
-    }
-`);
-
-const vorticityShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision highp float;
-    precision highp sampler2D;
-
-    varying vec2 vUv;
-    varying vec2 vL;
-    varying vec2 vR;
-    varying vec2 vT;
-    varying vec2 vB;
-    uniform sampler2D uVelocity;
-    uniform sampler2D uCurl;
-    uniform float curl;
-    uniform float dt;
-
-    void main () {
-        float L = texture2D(uCurl, vL).x;
-        float R = texture2D(uCurl, vR).x;
-        float T = texture2D(uCurl, vT).x;
-        float B = texture2D(uCurl, vB).x;
-        float C = texture2D(uCurl, vUv).x;
-
-        vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
-        force /= length(force) + 0.0001;
-        force *= curl * C;
-        force.y *= -1.0;
-
-        vec2 velocity = texture2D(uVelocity, vUv).xy;
-        velocity += force * dt;
-        velocity = min(max(velocity, -1000.0), 1000.0);
-        gl_FragColor = vec4(velocity, 0.0, 1.0);
-    }
-`);
-
-const pressureShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    precision mediump sampler2D;
-
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
-    uniform sampler2D uPressure;
-    uniform sampler2D uDivergence;
-
-    void main () {
-        float L = texture2D(uPressure, vL).x;
-        float R = texture2D(uPressure, vR).x;
-        float T = texture2D(uPressure, vT).x;
-        float B = texture2D(uPressure, vB).x;
-        float C = texture2D(uPressure, vUv).x;
-        float divergence = texture2D(uDivergence, vUv).x;
-        float pressure = (L + R + B + T - divergence) * 0.25;
-        gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
-    }
-`);
-
-const gradientSubtractShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    precision mediump sampler2D;
-
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
-    uniform sampler2D uPressure;
-    uniform sampler2D uVelocity;
-
-    void main () {
-        float L = texture2D(uPressure, vL).x;
-        float R = texture2D(uPressure, vR).x;
-        float T = texture2D(uPressure, vT).x;
-        float B = texture2D(uPressure, vB).x;
-        vec2 velocity = texture2D(uVelocity, vUv).xy;
-        velocity.xy -= vec2(R - L, T - B);
-        gl_FragColor = vec4(velocity, 0.0, 1.0);
-    }
-`);
 
 const blit = (() => {
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -599,6 +418,16 @@ let sunraysTemp;
 
 let ditheringTexture = createTextureAsync('/src/LDR_LLL1_0.png');
 
+// Initialize physics shaders
+const physicsShaders = initPhysicsShaders(gl, baseVertexShader, compileShader);
+
+// Create physics programs
+const pressureProgram = new Program(baseVertexShader, physicsShaders.pressureShader);
+const divergenceProgram = new Program(baseVertexShader, physicsShaders.divergenceShader);
+const curlProgram = new Program(baseVertexShader, physicsShaders.curlShader);
+const vorticityProgram = new Program(baseVertexShader, physicsShaders.vorticityShader);
+const gradienSubtractProgram = new Program(baseVertexShader, physicsShaders.gradientSubtractShader);
+
 // Initialize sunrays programs
 const sunraysShaders = initSunraysShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
 const sunraysMaskProgram     = new Program(baseVertexShader, sunraysShaders.sunraysMaskShader);
@@ -611,19 +440,17 @@ const bloomPrefilterProgram  = new Program(baseVertexShader, bloomShaders.bloomP
 const bloomBlurProgram       = new Program(baseVertexShader, bloomShaders.bloomBlurShader);
 const bloomFinalProgram      = new Program(baseVertexShader, bloomShaders.bloomFinalShader);
 
-// Initialize splat program
-const splatShaders = initSplatShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
-const splatProgram           = new Program(baseVertexShader, splatShaders.splatShader);
+// Initialize splat and advection shaders
+const splatShaders = initSplatShaders(gl, baseVertexShader, compileShader);
+const splatProgram = new Program(baseVertexShader, splatShaders.splatShader);
+const advectionProgram = new Program(baseVertexShader, splatShaders.advectionShader);
 
-const copyProgram            = new Program(baseVertexShader, copyShader);
-const clearProgram           = new Program(baseVertexShader, clearShader);
-const colorProgram           = new Program(baseVertexShader, colorShader);
-const advectionProgram       = new Program(baseVertexShader, advectionShader);
-const divergenceProgram      = new Program(baseVertexShader, divergenceShader);
-const curlProgram            = new Program(baseVertexShader, curlShader);
-const vorticityProgram       = new Program(baseVertexShader, vorticityShader);
-const pressureProgram        = new Program(baseVertexShader, pressureShader);
-const gradienSubtractProgram = new Program(baseVertexShader, gradientSubtractShader);
+// Initialize color shaders
+const colorShaders = initColorShaders(gl, baseVertexShader, compileShader);
+const colorProgram = new Program(baseVertexShader, colorShaders.colorShader);
+
+const copyProgram = new Program(baseVertexShader, copyShader);
+const clearProgram = new Program(baseVertexShader, clearShader);
 
 const displayMaterial = new Material(baseVertexShader, displayShaderSource);
 
@@ -843,66 +670,45 @@ function applyInputs () {
 function step (dt) {
     gl.disable(gl.BLEND);
 
-    curlProgram.bind();
-    gl.uniform2f(curlProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.attach(0));
-    blit(curl);
+    // Apply curl and vorticity
+    applyCurl(gl, velocity, curl, { curl: curlProgram }, blit);
+    applyVorticity(gl, config, dt, velocity, curl, { vorticity: vorticityProgram }, blit);
 
-    vorticityProgram.bind();
-    gl.uniform2f(vorticityProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
-    gl.uniform1i(vorticityProgram.uniforms.uCurl, curl.attach(1));
-    gl.uniform1f(vorticityProgram.uniforms.curl, config.CURL);
-    gl.uniform1f(vorticityProgram.uniforms.dt, dt);
-    blit(velocity.write);
-    velocity.swap();
-
-    divergenceProgram.bind();
-    gl.uniform2f(divergenceProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    gl.uniform1i(divergenceProgram.uniforms.uVelocity, velocity.read.attach(0));
-    blit(divergence);
-
+    // Apply divergence and pressure
+    applyDivergence(gl, velocity, divergence, { divergence: divergenceProgram }, blit);
+    
     clearProgram.bind();
     gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
     gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE);
     blit(pressure.write);
     pressure.swap();
 
-    pressureProgram.bind();
-    gl.uniform2f(pressureProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    gl.uniform1i(pressureProgram.uniforms.uDivergence, divergence.attach(0));
-    for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
-        gl.uniform1i(pressureProgram.uniforms.uPressure, pressure.read.attach(1));
-        blit(pressure.write);
-        pressure.swap();
-    }
+    applyPressure(gl, config, pressure, divergence, { pressure: pressureProgram }, blit);
+    applyGradientSubtract(gl, pressure, velocity, { gradientSubtract: gradienSubtractProgram }, blit);
 
-    gradienSubtractProgram.bind();
-    gl.uniform2f(gradienSubtractProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    gl.uniform1i(gradienSubtractProgram.uniforms.uPressure, pressure.read.attach(0));
-    gl.uniform1i(gradienSubtractProgram.uniforms.uVelocity, velocity.read.attach(1));
-    blit(velocity.write);
-    velocity.swap();
+    // Apply advection to velocity
+    applyAdvection(
+        gl,
+        velocity,
+        velocity,
+        dt,
+        config.VELOCITY_DISSIPATION,
+        advectionProgram,
+        blit,
+        ext.supportLinearFiltering
+    );
 
-    advectionProgram.bind();
-    gl.uniform2f(advectionProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    if (!ext.supportLinearFiltering)
-        gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, velocity.texelSizeX, velocity.texelSizeY);
-    let velocityId = velocity.read.attach(0);
-    gl.uniform1i(advectionProgram.uniforms.uVelocity, velocityId);
-    gl.uniform1i(advectionProgram.uniforms.uSource, velocityId);
-    gl.uniform1f(advectionProgram.uniforms.dt, dt);
-    gl.uniform1f(advectionProgram.uniforms.dissipation, config.VELOCITY_DISSIPATION);
-    blit(velocity.write);
-    velocity.swap();
-
-    if (!ext.supportLinearFiltering)
-        gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, dye.texelSizeX, dye.texelSizeY);
-    gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
-    gl.uniform1i(advectionProgram.uniforms.uSource, dye.read.attach(1));
-    gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
-    blit(dye.write);
-    dye.swap();
+    // Apply advection to dye
+    applyAdvection(
+        gl,
+        velocity,
+        dye,
+        dt,
+        config.DENSITY_DISSIPATION,
+        advectionProgram,
+        blit,
+        ext.supportLinearFiltering
+    );
 }
 
 function render (target) {
@@ -931,7 +737,7 @@ function render (target) {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.BLEND);
 
-    drawColor(target, config.BACK_COLOR);
+    drawBackgroundColor(gl, target, config.BACK_COLOR, colorProgram, blit);
     drawDisplay(target);
 }
 
