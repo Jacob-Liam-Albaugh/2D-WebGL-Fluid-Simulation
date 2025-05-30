@@ -373,3 +373,27 @@ export interface SunraysPrograms {
     };
     blur: BlurProgram;
 }
+
+
+export interface SplatData {
+    texcoordX: number;
+    texcoordY: number;
+    prevTexcoordX: number;
+    prevTexcoordY: number;
+    deltaX: number;
+    deltaY: number;
+    color: RGBColor;
+}
+
+export interface PointerData {
+    id: number;
+    texcoordX: number;
+    texcoordY: number;
+    prevTexcoordX: number;
+    prevTexcoordY: number;
+    deltaX: number;
+    deltaY: number;
+    down: boolean;
+    moved: boolean;
+    color: RGBColor;
+}

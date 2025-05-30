@@ -6,6 +6,7 @@ import { ColorConfiguration } from './colorConfigurations';
 import { applyBloom, initBloomFramebuffers, initBloomShaders } from './bloomManager';
 import { drawColor as drawBackgroundColor, getRandomColor, initColorShaders, setColorScheme } from './colorManager';
 import { applyCurl, applyDivergence, applyGradientSubtract, applyPressure, applyVorticity, initPhysicsShaders } from './physicsManager';
+import { PointerManager, } from './pointerManager';
 import {
     applyAdvection,
     handlePointerSplat,
@@ -25,31 +26,14 @@ import {
     FBO,
     FormatResult,
     PhysicsPrograms,
-    Pointer,
     RGBColor,
     ShaderUniforms,
+    SplatData,
     SplatProgram,
     SunraysPrograms,
     VelocityFBO,
     WebGLContext
 } from './types';
-
-class PointerPrototype {
-    id: number = -1;
-    texcoordX: number = 0;
-    texcoordY: number = 0;
-    prevTexcoordX: number = 0;
-    prevTexcoordY: number = 0;
-    deltaX: number = 0;
-    deltaY: number = 0;
-    down: boolean = false;
-    moved: boolean = false;
-    color: RGBColor;
-
-    constructor() {
-        this.color = getColorFromScheme();
-    }
-}
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementsByTagName('canvas')[0];
@@ -62,7 +46,7 @@ const config: Config = {
     VELOCITY_DISSIPATION: 0.2,
     PRESSURE: 0.8,
     PRESSURE_ITERATIONS: 20,
-    CURL: 5,
+    CURL: 1,
     SPLAT_RADIUS: 0.01,
     SPLAT_FORCE: 8000,
     BACK_COLOR: { r: 0, g: 0, b: 0 },
@@ -90,10 +74,6 @@ function getColorFromScheme(): RGBColor {
 
 // Initialize the default color scheme
 initColorScheme();
-
-/** @type {Pointer[]} */
-let pointers: Pointer[] = [];
-pointers.push(new PointerPrototype());
 
 /** @type {{gl: WebGLRenderingContext, ext: Object}} */
 const { gl, ext }: WebGLContext = getWebGLContext(canvas);
@@ -804,6 +784,13 @@ initFramebuffers();
 // Initialize display keywords
 updateKeywords();
 
+// Initialize the pointer manager after WebGL setup
+const pointerManager = new PointerManager(
+    canvas,
+    getColorFromScheme,
+    (splatData: SplatData) => handleSplat(splatData)
+);
+
 let lastUpdateTime = Date.now();
 update();
 
@@ -849,12 +836,7 @@ function resizeCanvas() {
  * @returns {void}
  */
 function applyInputs() {
-    pointers.forEach(p => {
-        if (p.moved) {
-            p.moved = false;
-            handleSplat(p);
-        }
-    });
+    pointerManager.applyInputs();
 }
 
 /**
@@ -973,21 +955,10 @@ function drawDisplay(target: FBO | null): void {
     blit(target);
 }
 
-/**
- * @param {Pointer} pointer - The pointer object
- * @returns {void}
- */
-function handleSplat(pointer: Pointer): void {
+// Update handleSplat function to use SplatData
+function handleSplat(splatData: SplatData): void {
     handlePointerSplat(
-        {
-            deltaX: pointer.deltaX,
-            deltaY: pointer.deltaY,
-            texcoordX: pointer.texcoordX,
-            texcoordY: pointer.texcoordY,
-            prevTexcoordX: pointer.prevTexcoordX,
-            prevTexcoordY: pointer.prevTexcoordY,
-            color: pointer.color
-        },
+        splatData,
         {
             SPLAT_FORCE: config.SPLAT_FORCE,
             SPLAT_RADIUS: config.SPLAT_RADIUS
@@ -999,102 +970,6 @@ function handleSplat(pointer: Pointer): void {
         splatProgram,
         blit
     );
-}
-
-/**
- * @param {number} radius - The radius to correct
- * @returns {number} The corrected radius
- */
-function correctRadius(radius: number): number {
-    let aspectRatio = canvas.width / canvas.height;
-    if (aspectRatio > 1)
-        radius *= aspectRatio;
-    return radius;
-}
-
-canvas.addEventListener('mousedown', /** @param {MouseEvent} e */ e => {
-    let posX = scaleByPixelRatio(e.offsetX);
-    let posY = scaleByPixelRatio(e.offsetY);
-    let pointer = pointers.find(p => p.id == -1);
-    if (pointer == null)
-        pointer = new PointerPrototype();
-    updatePointerDownData(pointer, -1, posX, posY);
-});
-
-canvas.addEventListener('mousemove', /** @param {MouseEvent} e */ e => {
-    let pointer = pointers[0];
-    if (!pointer.down) return;
-    let posX = scaleByPixelRatio(e.offsetX);
-    let posY = scaleByPixelRatio(e.offsetY);
-    updatePointerMoveData(pointer, posX, posY);
-});
-
-window.addEventListener('mouseup', () => {
-    updatePointerUpData(pointers[0]);
-});
-
-/**
- * @param {Pointer} pointer - The pointer object
- * @param {number} id - The pointer ID
- * @param {number} posX - X position
- * @param {number} posY - Y position
- * @returns {void}
- */
-function updatePointerDownData(pointer: Pointer, id: number, posX: number, posY: number) {
-    pointer.id = id;
-    pointer.down = true;
-    pointer.moved = false;
-    pointer.texcoordX = posX / canvas.width;
-    pointer.texcoordY = 1.0 - posY / canvas.height;
-    pointer.prevTexcoordX = pointer.texcoordX;
-    pointer.prevTexcoordY = pointer.texcoordY;
-    pointer.deltaX = 0;
-    pointer.deltaY = 0;
-    pointer.color = getColorFromScheme();
-}
-
-/**
- * @param {Pointer} pointer - The pointer object
- * @param {number} posX - X position
- * @param {number} posY - Y position
- * @returns {void}
- */
-function updatePointerMoveData(pointer: Pointer, posX: number, posY: number) {
-    pointer.prevTexcoordX = pointer.texcoordX;
-    pointer.prevTexcoordY = pointer.texcoordY;
-    pointer.texcoordX = posX / canvas.width;
-    pointer.texcoordY = 1.0 - posY / canvas.height;
-    pointer.deltaX = correctDeltaX(pointer.texcoordX - pointer.prevTexcoordX);
-    pointer.deltaY = correctDeltaY(pointer.texcoordY - pointer.prevTexcoordY);
-    pointer.moved = Math.abs(pointer.deltaX) > 0 || Math.abs(pointer.deltaY) > 0;
-}
-
-/**
- * @param {Pointer} pointer - The pointer object
- * @returns {void}
- */
-function updatePointerUpData(pointer: Pointer) {
-    pointer.down = false;
-}
-
-/**
- * @param {number} delta - The delta X to correct
- * @returns {number} The corrected delta X
- */
-function correctDeltaX(delta: number) {
-    let aspectRatio = canvas.width / canvas.height;
-    if (aspectRatio < 1) delta *= aspectRatio;
-    return delta;
-}
-
-/**
- * @param {number} delta - The delta Y to correct
- * @returns {number} The corrected delta Y
- */
-function correctDeltaY(delta: number) {
-    let aspectRatio = canvas.width / canvas.height;
-    if (aspectRatio > 1) delta /= aspectRatio;
-    return delta;
 }
 
 /**
