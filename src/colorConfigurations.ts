@@ -107,5 +107,13 @@ export const colorConfigurations = {
       "hsla(207, 70%, 37%, 1)", // Helvetia blue
       "hsla(288, 37%, 55%, 1)", // Rosolane purple
     ]
+  },
+  organic: {
+    gradient: [
+      "hsl(147, 30%, 30%)", // Deep slate green
+      "hsl(48, 40%, 85%)", // Cream yellow
+      "hsl(270, 15%, 75%)", // Grayish lavender
+      "hsl(282, 60%, 40%)", // Cotinga purple
+    ]
   }
 }; 
