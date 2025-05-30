@@ -96,16 +96,16 @@ export const colorConfigurations = {
   },
   dusk: {
     gradient: [
-      "rgb(137, 91, 123)", // Dusky madder violet
-      "rgb(122, 137, 184)", // Deep lyons blue
-      "rgb(255, 94, 196)", // Eosine pink
-      "rgb(128, 70, 27)", // Hay's russe
+      "hsla(315, 20%, 45%, 1)", // Dusky madder violet
+      "hsla(228, 31%, 60%, 1)", // Deep lyons blue
+      "hsla(320, 100%, 68%, 1)", // Eosine pink
+      "hsla(25, 65%, 30%, 1)", // Hay's russe
     ]
   },
   rosolane_to_helvetia: {
     gradient: [
-      "rgb(28, 107, 160)", // Helvetia blue
-      "rgb(168, 96, 183)", // Rosolane purple
+      "hsla(207, 70%, 37%, 1)", // Helvetia blue
+      "hsla(288, 37%, 55%, 1)", // Rosolane purple
     ]
   }
 }; 

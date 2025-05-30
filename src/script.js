@@ -24,6 +24,9 @@ SOFTWARE.
 
 'use strict';
 
+import { applyBloom, initBloomFramebuffers } from './bloomManager';
+import { getRandomColor, setColorScheme } from './colorManager';
+import { applySunrays, initSunraysFramebuffers } from './sunraysManager';
 
 // Simulation section
 
@@ -50,7 +53,21 @@ let config = {
     BLOOM_SOFT_KNEE: 0.7,
     SUNRAYS_RESOLUTION: 196,
     SUNRAYS_WEIGHT: 0.3,
+    COLOR_SCHEME: 'dusk'
 }
+
+// Initialize the color scheme
+function initColorScheme(scheme = config.COLOR_SCHEME) {
+    setColorScheme(scheme);
+}
+
+// Get a random color from the current scheme
+function getColorFromScheme() {
+    return getRandomColor();
+}
+
+// Initialize the default color scheme
+initColorScheme();
 
 function pointerPrototype () {
     this.id = -1;
@@ -62,11 +79,10 @@ function pointerPrototype () {
     this.deltaY = 0;
     this.down = false;
     this.moved = false;
-    this.color = [30, 0, 300];
+    this.color = getColorFromScheme();
 }
 
 let pointers = [];
-let splatStack = [];
 pointers.push(new pointerPrototype());
 
 const { gl, ext } = getWebGLContext(canvas);
@@ -159,32 +175,6 @@ function supportRenderTextureFormat (gl, internalFormat, format, type) {
 
     let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
     return status == gl.FRAMEBUFFER_COMPLETE;
-}
-
-function clamp01 (input) {
-    return Math.min(Math.max(input, 0), 1);
-}
-
-function textureToCanvas (texture, width, height) {
-    let captureCanvas = document.createElement('canvas');
-    let ctx = captureCanvas.getContext('2d');
-    captureCanvas.width = width;
-    captureCanvas.height = height;
-
-    let imageData = ctx.createImageData(width, height);
-    imageData.data.set(texture);
-    ctx.putImageData(imageData, 0, 0);
-
-    return captureCanvas;
-}
-
-function downloadURI (filename, uri) {
-    let link = document.createElement('a');
-    link.download = filename;
-    link.href = uri;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
 }
 
 class Material {
@@ -826,41 +816,24 @@ function initFramebuffers () {
     curl       = createFBO      (simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
     pressure   = createDoubleFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
 
-    initBloomFramebuffers();
-    initSunraysFramebuffers();
-}
-
-function initBloomFramebuffers () {
-    let res = getResolution(config.BLOOM_RESOLUTION);
-
-    const texType = ext.halfFloatTexType;
-    const rgba = ext.formatRGBA;
-    const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
-
-    bloom = createFBO(res.width, res.height, rgba.internalFormat, rgba.format, texType, filtering);
-
-    bloomFramebuffers.length = 0;
-    for (let i = 0; i < config.BLOOM_ITERATIONS; i++)
-    {
-        let width = res.width >> (i + 1);
-        let height = res.height >> (i + 1);
-
-        if (width < 2 || height < 2) break;
-
-        let fbo = createFBO(width, height, rgba.internalFormat, rgba.format, texType, filtering);
-        bloomFramebuffers.push(fbo);
-    }
-}
-
-function initSunraysFramebuffers () {
-    let res = getResolution(config.SUNRAYS_RESOLUTION);
-
-    const texType = ext.halfFloatTexType;
-    const r = ext.formatR;
-    const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
-
-    sunrays     = createFBO(res.width, res.height, r.internalFormat, r.format, texType, filtering);
-    sunraysTemp = createFBO(res.width, res.height, r.internalFormat, r.format, texType, filtering);
+    // Initialize bloom framebuffers using the new manager
+    bloom = createFBO(simRes.width, simRes.height, rgba.internalFormat, rgba.format, texType, filtering);
+    bloomFramebuffers = initBloomFramebuffers(gl, {
+        iterations: config.BLOOM_ITERATIONS,
+        resolution: config.BLOOM_RESOLUTION,
+        intensity: config.BLOOM_INTENSITY,
+        threshold: config.BLOOM_THRESHOLD,
+        softKnee: config.BLOOM_SOFT_KNEE
+    }, createFBO, getResolution, ext);
+    
+    // Initialize sunrays framebuffers using the new manager
+    const { sunrays: newSunrays, temp: newSunraysTemp } = initSunraysFramebuffers(gl, {
+        resolution: config.SUNRAYS_RESOLUTION,
+        weight: config.SUNRAYS_WEIGHT
+    }, createFBO, getResolution, ext);
+    
+    sunrays = newSunrays;
+    sunraysTemp = newSunraysTemp;
 }
 
 function createFBO (w, h, internalFormat, format, type, param) {
@@ -1097,8 +1070,28 @@ function step (dt) {
 }
 
 function render (target) {
-    applyBloom(dye.read, bloom);
-    applySunrays(dye.read, dye.write, sunrays);
+    // Use the new bloom manager's applyBloom function with config
+    applyBloom(gl, {
+        iterations: config.BLOOM_ITERATIONS,
+        resolution: config.BLOOM_RESOLUTION,
+        intensity: config.BLOOM_INTENSITY,
+        threshold: config.BLOOM_THRESHOLD,
+        softKnee: config.BLOOM_SOFT_KNEE
+    }, dye.read, bloom, blit, {
+        bloomPrefilter: bloomPrefilterProgram,
+        bloomBlur: bloomBlurProgram,
+        bloomFinal: bloomFinalProgram
+    });
+
+    // Use the new sunrays manager's applySunrays function with config
+    applySunrays(gl, {
+        resolution: config.SUNRAYS_RESOLUTION,
+        weight: config.SUNRAYS_WEIGHT
+    }, dye.read, dye.write, sunrays, blit, {
+        sunraysMask: sunraysMaskProgram,
+        sunrays: sunraysProgram
+    });
+
     blur(sunrays, sunraysTemp, 1);
 
     if (target == null || !config.TRANSPARENT) {
@@ -1109,7 +1102,7 @@ function render (target) {
         gl.disable(gl.BLEND);
     }
 
-    drawColor(target, normalizeColor(config.BACK_COLOR));
+    drawColor(target, config.BACK_COLOR);
     drawDisplay(target);
 }
 
@@ -1132,64 +1125,6 @@ function drawDisplay (target) {
     gl.uniform2f(displayMaterial.uniforms.ditherScale, scale.x, scale.y);
     gl.uniform1i(displayMaterial.uniforms.uSunrays, sunrays.attach(3));
     blit(target);
-}
-
-function applyBloom (source, destination) {
-    if (bloomFramebuffers.length < 2)
-        return;
-
-    let last = destination;
-
-    gl.disable(gl.BLEND);
-    bloomPrefilterProgram.bind();
-    let knee = config.BLOOM_THRESHOLD * config.BLOOM_SOFT_KNEE + 0.0001;
-    let curve0 = config.BLOOM_THRESHOLD - knee;
-    let curve1 = knee * 2;
-    let curve2 = 0.25 / knee;
-    gl.uniform3f(bloomPrefilterProgram.uniforms.curve, curve0, curve1, curve2);
-    gl.uniform1f(bloomPrefilterProgram.uniforms.threshold, config.BLOOM_THRESHOLD);
-    gl.uniform1i(bloomPrefilterProgram.uniforms.uTexture, source.attach(0));
-    blit(last);
-
-    bloomBlurProgram.bind();
-    for (let i = 0; i < bloomFramebuffers.length; i++) {
-        let dest = bloomFramebuffers[i];
-        gl.uniform2f(bloomBlurProgram.uniforms.texelSize, last.texelSizeX, last.texelSizeY);
-        gl.uniform1i(bloomBlurProgram.uniforms.uTexture, last.attach(0));
-        blit(dest);
-        last = dest;
-    }
-
-    gl.blendFunc(gl.ONE, gl.ONE);
-    gl.enable(gl.BLEND);
-
-    for (let i = bloomFramebuffers.length - 2; i >= 0; i--) {
-        let baseTex = bloomFramebuffers[i];
-        gl.uniform2f(bloomBlurProgram.uniforms.texelSize, last.texelSizeX, last.texelSizeY);
-        gl.uniform1i(bloomBlurProgram.uniforms.uTexture, last.attach(0));
-        gl.viewport(0, 0, baseTex.width, baseTex.height);
-        blit(baseTex);
-        last = baseTex;
-    }
-
-    gl.disable(gl.BLEND);
-    bloomFinalProgram.bind();
-    gl.uniform2f(bloomFinalProgram.uniforms.texelSize, last.texelSizeX, last.texelSizeY);
-    gl.uniform1i(bloomFinalProgram.uniforms.uTexture, last.attach(0));
-    gl.uniform1f(bloomFinalProgram.uniforms.intensity, config.BLOOM_INTENSITY);
-    blit(destination);
-}
-
-function applySunrays (source, mask, destination) {
-    gl.disable(gl.BLEND);
-    sunraysMaskProgram.bind();
-    gl.uniform1i(sunraysMaskProgram.uniforms.uTexture, source.attach(0));
-    blit(mask);
-
-    sunraysProgram.bind();
-    gl.uniform1f(sunraysProgram.uniforms.weight, config.SUNRAYS_WEIGHT);
-    gl.uniform1i(sunraysProgram.uniforms.uTexture, mask.attach(0));
-    blit(destination);
 }
 
 function blur (target, temp, iterations) {
@@ -1299,7 +1234,7 @@ function updatePointerDownData (pointer, id, posX, posY) {
     pointer.prevTexcoordY = pointer.texcoordY;
     pointer.deltaX = 0;
     pointer.deltaY = 0;
-    pointer.color = generateColor();
+    pointer.color = getColorFromScheme();
 }
 
 function updatePointerMoveData (pointer, posX, posY) {
@@ -1326,47 +1261,6 @@ function correctDeltaY (delta) {
     let aspectRatio = canvas.width / canvas.height;
     if (aspectRatio > 1) delta /= aspectRatio;
     return delta;
-}
-
-function generateColor () {
-    let c = HSVtoRGB(Math.random(), 1.0, 1.0);
-    c.r *= 0.15;
-    c.g *= 0.15;
-    c.b *= 0.15;
-    return c;
-}
-
-function HSVtoRGB (h, s, v) {
-    let r, g, b, i, f, p, q, t;
-    i = Math.floor(h * 6);
-    f = h * 6 - i;
-    p = v * (1 - s);
-    q = v * (1 - f * s);
-    t = v * (1 - (1 - f) * s);
-
-    switch (i % 6) {
-        case 0: r = v, g = t, b = p; break;
-        case 1: r = q, g = v, b = p; break;
-        case 2: r = p, g = v, b = t; break;
-        case 3: r = p, g = q, b = v; break;
-        case 4: r = t, g = p, b = v; break;
-        case 5: r = v, g = p, b = q; break;
-    }
-
-    return {
-        r,
-        g,
-        b
-    };
-}
-
-function normalizeColor (input) {
-    let output = {
-        r: input.r / 255,
-        g: input.g / 255,
-        b: input.b / 255
-    };
-    return output;
 }
 
 function wrap (value, min, max) {
