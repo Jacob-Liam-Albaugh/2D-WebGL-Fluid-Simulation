@@ -21,7 +21,6 @@ vec3 linearToGamma (vec3 color) {
 void main () {
     vec3 c = texture2D(uTexture, vUv).rgb;
 
-#ifdef SHADING
     vec3 lc = texture2D(uTexture, vL).rgb;
     vec3 rc = texture2D(uTexture, vR).rgb;
     vec3 tc = texture2D(uTexture, vT).rgb;
@@ -35,27 +34,18 @@ void main () {
 
     float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
     c *= diffuse;
-#endif
 
-#ifdef BLOOM
     vec3 bloom = texture2D(uBloom, vUv).rgb;
-#endif
 
-#ifdef SUNRAYS
     float sunrays = texture2D(uSunrays, vUv).r;
     c *= sunrays;
-#ifdef BLOOM
     bloom *= sunrays;
-#endif
-#endif
 
-#ifdef BLOOM
     float noise = texture2D(uDithering, vUv * ditherScale).r;
     noise = noise * 2.0 - 1.0;
     bloom += noise / 255.0;
     bloom = linearToGamma(bloom);
     c += bloom;
-#endif
 
     float a = max(c.r, max(c.g, c.b));
     gl_FragColor = vec4(c, a);
