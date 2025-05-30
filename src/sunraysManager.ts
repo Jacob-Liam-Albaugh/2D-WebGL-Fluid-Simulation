@@ -5,50 +5,12 @@ import BLUR_SHADER from './shaders/blurShader.glsl';
 import BLUR_VERTEX_SHADER from './shaders/blurVertexShader.glsl';
 import SUNRAYS_MASK_SHADER from './shaders/sunraysMaskShader.glsl';
 import SUNRAYS_SHADER from './shaders/sunraysShader.glsl';
-
-/**
- * Interface for Sunrays configuration
- */
-export interface SunraysConfig {
-    resolution: number;
-    weight: number;
-}
-
-/**
- * Interface for Sunrays Framebuffer
- */
-export interface SunraysFramebuffer {
-    texture: WebGLTexture;
-    fbo: WebGLFramebuffer;
-    width: number;
-    height: number;
-    texelSizeX: number;
-    texelSizeY: number;
-    attach: (id: number) => number;
-}
-
-/**
- * Interface for Sunrays Programs
- */
-export interface SunraysPrograms {
-    sunraysMask: { 
-        bind: () => void; 
-        uniforms: { uTexture: WebGLUniformLocation } 
-    };
-    sunrays: { 
-        bind: () => void; 
-        uniforms: { weight: WebGLUniformLocation; uTexture: WebGLUniformLocation } 
-    };
-    blur: {
-        bind: () => void;
-        uniforms: { texelSize: WebGLUniformLocation; uTexture: WebGLUniformLocation }
-    };
-}
+import { BaseFBO, SunraysConfig, SunraysPrograms } from './types';
 
 // Internal state - only tracking framebuffers
 let sunraysFramebuffers: {
-    sunrays: SunraysFramebuffer | null;
-    temp: SunraysFramebuffer | null;
+    sunrays: BaseFBO | null;
+    temp: BaseFBO | null;
 } = {
     sunrays: null,
     temp: null
@@ -94,10 +56,10 @@ export const initSunraysShaders = (
 export const initSunraysFramebuffers = (
     gl: WebGLRenderingContext,
     config: SunraysConfig,
-    createFBO: (w: number, h: number, internalFormat: number, format: number, type: number, param: number) => SunraysFramebuffer,
+    createFBO: (w: number, h: number, internalFormat: number, format: number, type: number, param: number) => BaseFBO,
     getResolution: (resolution: number) => { width: number; height: number },
     ext: { halfFloatTexType: number; formatR: { internalFormat: number; format: number }; supportLinearFiltering: boolean }
-): { sunrays: SunraysFramebuffer; temp: SunraysFramebuffer } => {
+): { sunrays: BaseFBO; temp: BaseFBO } => {
     const res = getResolution(config.resolution);
     const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
 
@@ -119,7 +81,7 @@ export const initSunraysFramebuffers = (
         filtering
     );
 
-    return { ...sunraysFramebuffers } as { sunrays: SunraysFramebuffer; temp: SunraysFramebuffer };
+    return { ...sunraysFramebuffers } as { sunrays: BaseFBO; temp: BaseFBO };
 };
 
 /**
@@ -135,14 +97,11 @@ export const initSunraysFramebuffers = (
 export const applySunrays = (
     gl: WebGLRenderingContext,
     config: SunraysConfig,
-    source: SunraysFramebuffer,
-    mask: SunraysFramebuffer,
-    destination: SunraysFramebuffer,
-    blit: (target: SunraysFramebuffer | null) => void,
-    programs: {
-        sunraysMask: { bind: () => void; uniforms: { uTexture: WebGLUniformLocation } };
-        sunrays: { bind: () => void; uniforms: { weight: WebGLUniformLocation; uTexture: WebGLUniformLocation } };
-    }
+    source: BaseFBO,
+    mask: BaseFBO,
+    destination: BaseFBO,
+    blit: (target: BaseFBO | null) => void,
+    programs: SunraysPrograms
 ): void => {
     gl.disable(gl.BLEND);
 
@@ -161,7 +120,7 @@ export const applySunrays = (
 /**
  * Get current sunrays framebuffers
  */
-export const getSunraysFramebuffers = (): { sunrays: SunraysFramebuffer | null; temp: SunraysFramebuffer | null } => {
+export const getSunraysFramebuffers = (): { sunrays: BaseFBO | null; temp: BaseFBO | null } => {
     return { ...sunraysFramebuffers };
 };
 
@@ -176,11 +135,11 @@ export const getSunraysFramebuffers = (): { sunrays: SunraysFramebuffer | null; 
  */
 export const applySunraysBlur = (
     gl: WebGLRenderingContext,
-    target: SunraysFramebuffer,
-    temp: SunraysFramebuffer,
+    target: BaseFBO,
+    temp: BaseFBO,
     iterations: number,
     blurProgram: { bind: () => void; uniforms: { texelSize: WebGLUniformLocation; uTexture: WebGLUniformLocation } },
-    blit: (target: SunraysFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     blurProgram.bind();
     for (let i = 0; i < iterations; i++) {

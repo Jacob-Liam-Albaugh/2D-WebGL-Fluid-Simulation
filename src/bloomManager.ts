@@ -4,62 +4,10 @@
 import BLOOM_BLUR_SHADER from './shaders/bloomBlurShader.glsl';
 import BLOOM_FINAL_SHADER from './shaders/bloomFinalShader.glsl';
 import BLOOM_PREFILTER_SHADER from './shaders/bloomPrefilterShader.glsl';
-
-/**
- * Interface for Bloom configuration
- */
-export interface BloomConfig {
-    iterations: number;
-    resolution: number;
-    intensity: number;
-    threshold: number;
-    softKnee: number;
-}
-
-/**
- * Interface for Bloom Framebuffer
- */
-export interface BloomFramebuffer {
-    texture: WebGLTexture;
-    fbo: WebGLFramebuffer;
-    width: number;
-    height: number;
-    texelSizeX: number;
-    texelSizeY: number;
-    attach: (id: number) => number;
-}
-
-/**
- * Interface for Bloom Programs
- */
-export interface BloomPrograms {
-    bloomPrefilter: { 
-        bind: () => void; 
-        uniforms: { 
-            curve: WebGLUniformLocation; 
-            threshold: WebGLUniformLocation; 
-            uTexture: WebGLUniformLocation 
-        } 
-    };
-    bloomBlur: { 
-        bind: () => void; 
-        uniforms: { 
-            texelSize: WebGLUniformLocation; 
-            uTexture: WebGLUniformLocation 
-        } 
-    };
-    bloomFinal: { 
-        bind: () => void; 
-        uniforms: { 
-            texelSize: WebGLUniformLocation; 
-            uTexture: WebGLUniformLocation; 
-            intensity: WebGLUniformLocation 
-        } 
-    };
-}
+import { BaseFBO, BloomConfig, BloomPrograms } from './types';
 
 // Internal state - only tracking framebuffers
-let bloomFramebuffers: BloomFramebuffer[] = [];
+let bloomFramebuffers: BaseFBO[] = [];
 
 /**
  * Initialize bloom shaders
@@ -98,10 +46,10 @@ export const initBloomShaders = (
 export const initBloomFramebuffers = (
     gl: WebGLRenderingContext,
     config: BloomConfig,
-    createFBO: (w: number, h: number, internalFormat: number, format: number, type: number, param: number) => BloomFramebuffer,
+    createFBO: (w: number, h: number, internalFormat: number, format: number, type: number, param: number) => BaseFBO,
     getResolution: (resolution: number) => { width: number; height: number },
     ext: { halfFloatTexType: number; formatRGBA: { internalFormat: number; format: number }; supportLinearFiltering: boolean }
-): BloomFramebuffer[] => {
+): BaseFBO[] => {
     const res = getResolution(config.resolution);
     const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
 
@@ -151,14 +99,10 @@ export const initBloomFramebuffers = (
 export const applyBloom = (
     gl: WebGLRenderingContext,
     config: BloomConfig,
-    source: BloomFramebuffer,
-    destination: BloomFramebuffer,
-    blit: (target: BloomFramebuffer | null) => void,
-    programs: {
-        bloomPrefilter: { bind: () => void; uniforms: { curve: WebGLUniformLocation; threshold: WebGLUniformLocation; uTexture: WebGLUniformLocation } };
-        bloomBlur: { bind: () => void; uniforms: { texelSize: WebGLUniformLocation; uTexture: WebGLUniformLocation } };
-        bloomFinal: { bind: () => void; uniforms: { texelSize: WebGLUniformLocation; uTexture: WebGLUniformLocation; intensity: WebGLUniformLocation } };
-    }
+    source: BaseFBO,
+    destination: BaseFBO,
+    blit: (target: BaseFBO | null) => void,
+    programs: BloomPrograms
 ): void => {
     if (bloomFramebuffers.length < 2) return;
 
@@ -212,6 +156,6 @@ export const applyBloom = (
 /**
  * Get current bloom framebuffers
  */
-export const getBloomFramebuffers = (): BloomFramebuffer[] => {
+export const getBloomFramebuffers = (): BaseFBO[] => {
     return [...bloomFramebuffers];
 }; 

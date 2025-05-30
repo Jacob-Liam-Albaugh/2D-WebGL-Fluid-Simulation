@@ -1,35 +1,7 @@
 // Color management utilities using functional programming
 import { ColorConfiguration, colorConfigurations } from './colorConfigurations';
 import COLOR_SHADER from './shaders/colorShader.glsl';
-
-/**
- * Interface for Program
- */
-export interface Program {
-    bind: () => void;
-    uniforms: {
-        color: WebGLUniformLocation;
-    };
-}
-
-/**
- * Interface for RGB color representation
- */
-export interface RGBColor {
-    r: number;
-    g: number;
-    b: number;
-}
-
-/**
- * Interface for HSLA color representation
- */
-interface HSLAColor {
-    h: number; // 0-360
-    s: number; // 0-100
-    l: number; // 0-100
-    a: number; // 0-1
-}
+import { FBO, HSLAColor, Program, RGBColor } from './types';
 
 // Internal state for color management
 let currentScheme: ColorConfiguration = 'default';
@@ -139,14 +111,17 @@ export const setColorScheme = (scheme: ColorConfiguration = 'default'): RGBColor
 };
 
 /**
- * Get a random color from the current scheme
+ * Get a random color using HSV color space
  * @returns RGB color object
  */
 export const getRandomColor = (): RGBColor => {
-    if (currentColors.length === 0) {
-        setColorScheme(currentScheme);
-    }
-    return currentColors[Math.floor(Math.random() * currentColors.length)];
+    const color = HSVtoRGB(Math.random(), 1.0, 1.0);
+    const intensity = 0.15;
+    return {
+        r: color.r * intensity,
+        g: color.g * intensity,
+        b: color.b * intensity
+    };
 };
 
 /**
@@ -181,10 +156,10 @@ export const initColorShaders = (
  */
 export const drawColor = (
     gl: WebGLRenderingContext,
-    target: any,
+    target: FBO | null,
     color: RGBColor,
     colorProgram: Program,
-    blit: (target: any) => void
+    blit: (target: FBO | null) => void
 ): void => {
     colorProgram.bind();
     gl.uniform4f(colorProgram.uniforms.color, color.r, color.g, color.b, 1);

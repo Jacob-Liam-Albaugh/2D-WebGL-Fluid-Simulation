@@ -6,84 +6,7 @@ import DIVERGENCE_SHADER from './shaders/divergenceShader.glsl';
 import GRADIENT_SUBTRACT_SHADER from './shaders/gradientSubtractShader.glsl';
 import PRESSURE_SHADER from './shaders/pressureShader.glsl';
 import VORTICITY_SHADER from './shaders/vorticityShader.glsl';
-
-/**
- * Interface for Physics configuration
- */
-export interface PhysicsConfig {
-    PRESSURE: number;
-    PRESSURE_ITERATIONS: number;
-    CURL: number;
-    VELOCITY_DISSIPATION: number;
-    DENSITY_DISSIPATION: number;
-}
-
-/**
- * Interface for Single Physics Framebuffer
- */
-export interface SinglePhysicsFramebuffer {
-    texture: WebGLTexture;
-    fbo: WebGLFramebuffer;
-    width: number;
-    height: number;
-    texelSizeX: number;
-    texelSizeY: number;
-    attach: (id: number) => number;
-}
-
-/**
- * Interface for Double Physics Framebuffer
- */
-export interface DoublePhysicsFramebuffer {
-    width: number;
-    height: number;
-    texelSizeX: number;
-    texelSizeY: number;
-    read: SinglePhysicsFramebuffer;
-    write: SinglePhysicsFramebuffer;
-    swap: () => void;
-}
-
-/**
- * Interface for Physics Programs
- */
-export interface PhysicsPrograms {
-    pressure: {
-        bind: () => void;
-        uniforms: {
-            uPressure: WebGLUniformLocation;
-            uDivergence: WebGLUniformLocation;
-        }
-    };
-    divergence: {
-        bind: () => void;
-        uniforms: {
-            uVelocity: WebGLUniformLocation;
-        }
-    };
-    curl: {
-        bind: () => void;
-        uniforms: {
-            uVelocity: WebGLUniformLocation;
-        }
-    };
-    vorticity: {
-        bind: () => void;
-        uniforms: {
-            uVelocity: WebGLUniformLocation;
-            uCurl: WebGLUniformLocation;
-            curl: WebGLUniformLocation;
-            dt: WebGLUniformLocation;
-        }
-    };
-    gradientSubtract: {
-        bind: () => void;
-        uniforms: {
-            uPressure: WebGLUniformLocation;
-            uVelocity: WebGLUniformLocation;
-        }
-    };
-}
+import { BaseFBO, DoubleFBO, PhysicsConfig, PhysicsPrograms } from './types';
 
 /**
  * Initialize physics shaders
@@ -120,13 +43,14 @@ export const initPhysicsShaders = (
 export const applyPressure = (
     gl: WebGLRenderingContext,
     config: PhysicsConfig,
-    pressure: DoublePhysicsFramebuffer,
-    divergence: SinglePhysicsFramebuffer,
+    pressure: DoubleFBO,
+    divergence: BaseFBO,
     programs: PhysicsPrograms,
-    blit: (target: SinglePhysicsFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     gl.disable(gl.BLEND);
     programs.pressure.bind();
+    gl.uniform2f(programs.pressure.uniforms.texelSize, pressure.texelSizeX, pressure.texelSizeY);
 
     for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
         gl.uniform1i(programs.pressure.uniforms.uDivergence, divergence.attach(0));
@@ -141,10 +65,10 @@ export const applyPressure = (
  */
 export const applyDivergence = (
     gl: WebGLRenderingContext,
-    velocity: DoublePhysicsFramebuffer,
-    divergence: SinglePhysicsFramebuffer,
+    velocity: DoubleFBO,
+    divergence: BaseFBO,
     programs: PhysicsPrograms,
-    blit: (target: SinglePhysicsFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     gl.disable(gl.BLEND);
     programs.divergence.bind();
@@ -157,13 +81,14 @@ export const applyDivergence = (
  */
 export const applyCurl = (
     gl: WebGLRenderingContext,
-    velocity: DoublePhysicsFramebuffer,
-    curl: SinglePhysicsFramebuffer,
+    velocity: DoubleFBO,
+    curl: BaseFBO,
     programs: PhysicsPrograms,
-    blit: (target: SinglePhysicsFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     gl.disable(gl.BLEND);
     programs.curl.bind();
+    gl.uniform2f(programs.curl.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.curl.uniforms.uVelocity, velocity.read.attach(0));
     blit(curl);
 };
@@ -175,13 +100,14 @@ export const applyVorticity = (
     gl: WebGLRenderingContext,
     config: PhysicsConfig,
     dt: number,
-    velocity: DoublePhysicsFramebuffer,
-    curl: SinglePhysicsFramebuffer,
+    velocity: DoubleFBO,
+    curl: BaseFBO,
     programs: PhysicsPrograms,
-    blit: (target: SinglePhysicsFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     gl.disable(gl.BLEND);
     programs.vorticity.bind();
+    gl.uniform2f(programs.vorticity.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.vorticity.uniforms.uVelocity, velocity.read.attach(0));
     gl.uniform1i(programs.vorticity.uniforms.uCurl, curl.attach(1));
     gl.uniform1f(programs.vorticity.uniforms.curl, config.CURL);
@@ -195,13 +121,14 @@ export const applyVorticity = (
  */
 export const applyGradientSubtract = (
     gl: WebGLRenderingContext,
-    pressure: DoublePhysicsFramebuffer,
-    velocity: DoublePhysicsFramebuffer,
+    pressure: DoubleFBO,
+    velocity: DoubleFBO,
     programs: PhysicsPrograms,
-    blit: (target: SinglePhysicsFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     gl.disable(gl.BLEND);
     programs.gradientSubtract.bind();
+    gl.uniform2f(programs.gradientSubtract.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.gradientSubtract.uniforms.uPressure, pressure.read.attach(0));
     gl.uniform1i(programs.gradientSubtract.uniforms.uVelocity, velocity.read.attach(1));
     blit(velocity.write);

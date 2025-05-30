@@ -3,68 +3,7 @@
 // Import shader source code
 import ADVECTION_SHADER from './shaders/advectionShader.glsl';
 import SPLAT_SHADER from './shaders/splatShader.glsl';
-
-/**
- * Interface for Splat Program
- */
-export interface SplatProgram {
-    bind: () => void;
-    uniforms: {
-        uTarget: WebGLUniformLocation;
-        aspectRatio: WebGLUniformLocation;
-        point: WebGLUniformLocation;
-        color: WebGLUniformLocation;
-        radius: WebGLUniformLocation;
-    };
-}
-
-/**
- * Interface for Advection Program
- */
-export interface AdvectionProgram {
-    bind: () => void;
-    uniforms: {
-        uVelocity: WebGLUniformLocation;
-        uSource: WebGLUniformLocation;
-        texelSize: WebGLUniformLocation;
-        dyeTexelSize: WebGLUniformLocation;
-        dt: WebGLUniformLocation;
-        dissipation: WebGLUniformLocation;
-    };
-}
-
-/**
- * Interface for Splat configuration
- */
-export interface SplatConfig {
-    SPLAT_FORCE: number;
-    SPLAT_RADIUS: number;
-}
-
-/**
- * Interface for Splat Framebuffer
- */
-export interface SplatFramebuffer {
-    texture: WebGLTexture;
-    fbo: WebGLFramebuffer;
-    width: number;
-    height: number;
-    texelSizeX: number;
-    texelSizeY: number;
-    attach: (id: number) => number;
-    read: SplatFramebuffer;
-    write: SplatFramebuffer;
-    swap: () => void;
-}
-
-/**
- * Interface for Splat Color
- */
-export interface SplatColor {
-    r: number;
-    g: number;
-    b: number;
-}
+import { BaseFBO, DoubleFBO, Pointer, RGBColor, SplatConfig, SplatProgram } from './types';
 
 /**
  * Initialize splat and advection shaders
@@ -72,13 +11,18 @@ export interface SplatColor {
 export const initSplatShaders = (
     gl: WebGLRenderingContext,
     baseVertexShader: WebGLShader,
-    compileShader: (type: number, source: string) => WebGLShader
+    compileShader: (type: number, source: string, keywords?: string[]) => WebGLShader,
+    supportLinearFiltering: boolean | null
 ): { 
     splatShader: WebGLShader;
     advectionShader: WebGLShader;
 } => {
     const splatShader = compileShader(gl.FRAGMENT_SHADER, SPLAT_SHADER);
-    const advectionShader = compileShader(gl.FRAGMENT_SHADER, ADVECTION_SHADER);
+    const advectionShader = compileShader(
+        gl.FRAGMENT_SHADER,
+        ADVECTION_SHADER,
+        supportLinearFiltering ? undefined : ['MANUAL_FILTERING']
+    );
     return { 
         splatShader,
         advectionShader
@@ -105,12 +49,12 @@ export const applySplat = (
     y: number,
     dx: number,
     dy: number,
-    color: SplatColor,
-    velocity: SplatFramebuffer,
-    dye: SplatFramebuffer,
+    color: RGBColor,
+    velocity: DoubleFBO,
+    dye: DoubleFBO,
     canvas: HTMLCanvasElement,
     splatProgram: SplatProgram,
-    blit: (target: SplatFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     splatProgram.bind();
     
@@ -138,12 +82,22 @@ export const applySplat = (
  */
 export const applyAdvection = (
     gl: WebGLRenderingContext,
-    velocity: SplatFramebuffer,
-    source: SplatFramebuffer,
+    velocity: DoubleFBO,
+    source: DoubleFBO,
     dt: number,
     dissipation: number,
-    advectionProgram: AdvectionProgram,
-    blit: (target: SplatFramebuffer | null) => void,
+    advectionProgram: {
+        bind: () => void;
+        uniforms: {
+            uVelocity: WebGLUniformLocation;
+            uSource: WebGLUniformLocation;
+            texelSize: WebGLUniformLocation;
+            dyeTexelSize: WebGLUniformLocation;
+            dt: WebGLUniformLocation;
+            dissipation: WebGLUniformLocation;
+        }
+    },
+    blit: (target: BaseFBO | null) => void,
     supportLinearFiltering: boolean
 ): void => {
     gl.disable(gl.BLEND);
@@ -153,8 +107,17 @@ export const applyAdvection = (
         gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, velocity.texelSizeX, velocity.texelSizeY);
     }
     gl.uniform2f(advectionProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
-    gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
-    gl.uniform1i(advectionProgram.uniforms.uSource, source.read.attach(1));
+    
+    // If velocity and source are the same, use the same texture ID
+    const velocityId = velocity.read.attach(0);
+    if (velocity === source) {
+        gl.uniform1i(advectionProgram.uniforms.uVelocity, velocityId);
+        gl.uniform1i(advectionProgram.uniforms.uSource, velocityId);
+    } else {
+        gl.uniform1i(advectionProgram.uniforms.uVelocity, velocityId);
+        gl.uniform1i(advectionProgram.uniforms.uSource, source.read.attach(1));
+    }
+    
     gl.uniform1f(advectionProgram.uniforms.dt, dt);
     gl.uniform1f(advectionProgram.uniforms.dissipation, dissipation);
     blit(source.write);
@@ -170,15 +133,15 @@ export const handlePointerSplat = (
         deltaY: number;
         texcoordX: number;
         texcoordY: number;
-        color: SplatColor;
+        color: RGBColor;
     },
     config: SplatConfig,
     gl: WebGLRenderingContext,
-    velocity: SplatFramebuffer,
-    dye: SplatFramebuffer,
+    velocity: DoubleFBO,
+    dye: DoubleFBO,
     canvas: HTMLCanvasElement,
     splatProgram: SplatProgram,
-    blit: (target: SplatFramebuffer | null) => void
+    blit: (target: BaseFBO | null) => void
 ): void => {
     const dx = pointer.deltaX * config.SPLAT_FORCE;
     const dy = pointer.deltaY * config.SPLAT_FORCE;
@@ -196,4 +159,110 @@ export const handlePointerSplat = (
         splatProgram,
         blit
     );
+};
+
+/**
+ * Create multiple random splats
+ */
+export const multipleSplats = (
+    amount: number,
+    config: SplatConfig,
+    gl: WebGLRenderingContext,
+    velocity: DoubleFBO,
+    dye: DoubleFBO,
+    canvas: HTMLCanvasElement,
+    splatProgram: SplatProgram,
+    blit: (target: BaseFBO | null) => void,
+    getColorFromScheme: () => RGBColor
+): void => {
+    for (let i = 0; i < amount; i++) {
+        const color = getColorFromScheme();
+        color.r *= 10.0;
+        color.g *= 10.0;
+        color.b *= 10.0;
+        const x = Math.random();
+        const y = Math.random();
+        const dx = 1000 * (Math.random() - 0.5);
+        const dy = 1000 * (Math.random() - 0.5);
+        applySplat(
+            gl,
+            config,
+            x,
+            y,
+            dx,
+            dy,
+            color,
+            velocity,
+            dye,
+            canvas,
+            splatProgram,
+            blit
+        );
+    }
+};
+
+/**
+ * Update pointer data when moving
+ */
+export const updatePointerMoveData = (
+    pointer: Pointer,
+    posX: number,
+    posY: number,
+    canvas: HTMLCanvasElement
+): void => {
+    pointer.prevTexcoordX = pointer.texcoordX;
+    pointer.prevTexcoordY = pointer.texcoordY;
+    pointer.texcoordX = posX / canvas.width;
+    pointer.texcoordY = 1.0 - posY / canvas.height;
+    pointer.deltaX = correctDeltaX(pointer.texcoordX - pointer.prevTexcoordX, canvas);
+    pointer.deltaY = correctDeltaY(pointer.texcoordY - pointer.prevTexcoordY, canvas);
+    pointer.moved = Math.abs(pointer.deltaX) > 0 || Math.abs(pointer.deltaY) > 0;
+};
+
+/**
+ * Update pointer data when pressed down
+ */
+export const updatePointerDownData = (
+    pointer: Pointer,
+    id: number,
+    posX: number,
+    posY: number,
+    canvas: HTMLCanvasElement,
+    getColorFromScheme: () => RGBColor
+): void => {
+    pointer.id = id;
+    pointer.down = true;
+    pointer.moved = false;
+    pointer.texcoordX = posX / canvas.width;
+    pointer.texcoordY = 1.0 - posY / canvas.height;
+    pointer.prevTexcoordX = pointer.texcoordX;
+    pointer.prevTexcoordY = pointer.texcoordY;
+    pointer.deltaX = 0;
+    pointer.deltaY = 0;
+    pointer.color = getColorFromScheme();
+};
+
+/**
+ * Update pointer data when released
+ */
+export const updatePointerUpData = (pointer: Pointer): void => {
+    pointer.down = false;
+};
+
+/**
+ * Correct delta X based on aspect ratio
+ */
+const correctDeltaX = (delta: number, canvas: HTMLCanvasElement): number => {
+    const aspectRatio = canvas.width / canvas.height;
+    if (aspectRatio < 1) delta *= aspectRatio;
+    return delta;
+};
+
+/**
+ * Correct delta Y based on aspect ratio
+ */
+const correctDeltaY = (delta: number, canvas: HTMLCanvasElement): number => {
+    const aspectRatio = canvas.width / canvas.height;
+    if (aspectRatio > 1) delta /= aspectRatio;
+    return delta;
 }; 
