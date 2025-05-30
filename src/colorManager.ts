@@ -6,6 +6,7 @@ import { FBO, HSLAColor, Program, RGBColor } from './types';
 // Internal state for color management
 let currentScheme: ColorConfiguration = 'default';
 let currentColors: RGBColor[] = [];
+let currentColorIndex: number = 0;
 
 /**
  * Parse HSLA color string into HSLAColor object
@@ -107,36 +108,21 @@ export const setColorScheme = (scheme: ColorConfiguration = 'default'): RGBColor
     }
     currentScheme = scheme;
     currentColors = colorConfigurations[scheme].gradient.map(HSLAtoRGB);
+    currentColorIndex = 0; // Reset the index when changing schemes
     return currentColors;
 };
 
 /**
- * Get a random color using HSV color space
+ * Get the next color from the current color scheme in sequence
  * @returns RGB color object
  */
 export const getRandomColor = (): RGBColor => {
-    const color = HSVtoRGB(Math.random(), 1.0, 1.0);
-    const intensity = 0.15;
-    return {
-        r: color.r * intensity,
-        g: color.g * intensity,
-        b: color.b * intensity
-    };
-};
-
-/**
- * Generate a random color with reduced intensity
- * @returns RGB color object
- */
-export const generateColor = (): RGBColor => {
-    const color: RGBColor = HSVtoRGB(Math.random(), 1.0, 1.0);
-    const intensity: number = 0.15;
-    
-    return {
-        r: color.r * intensity,
-        g: color.g * intensity,
-        b: color.b * intensity
-    };
+    if (currentColors.length === 0) {
+        setColorScheme(currentScheme);
+    }
+    const color = currentColors[currentColorIndex];
+    currentColorIndex = (currentColorIndex + 1) % currentColors.length;
+    return color;
 };
 
 /**
