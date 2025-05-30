@@ -45,15 +45,15 @@ export const applyPressure = (
     config: PhysicsConfig,
     pressure: DoubleFBO,
     divergence: BaseFBO,
+    velocity: DoubleFBO,
     programs: PhysicsPrograms,
     blit: (target: BaseFBO | null) => void
 ): void => {
-    gl.disable(gl.BLEND);
     programs.pressure.bind();
-    gl.uniform2f(programs.pressure.uniforms.texelSize, pressure.texelSizeX, pressure.texelSizeY);
+    gl.uniform2f(programs.pressure.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(programs.pressure.uniforms.uDivergence, divergence.attach(0));
 
     for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
-        gl.uniform1i(programs.pressure.uniforms.uDivergence, divergence.attach(0));
         gl.uniform1i(programs.pressure.uniforms.uPressure, pressure.read.attach(1));
         blit(pressure.write);
         pressure.swap();
@@ -70,8 +70,8 @@ export const applyDivergence = (
     programs: PhysicsPrograms,
     blit: (target: BaseFBO | null) => void
 ): void => {
-    gl.disable(gl.BLEND);
     programs.divergence.bind();
+    gl.uniform2f(programs.divergence.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.divergence.uniforms.uVelocity, velocity.read.attach(0));
     blit(divergence);
 };
@@ -86,7 +86,6 @@ export const applyCurl = (
     programs: PhysicsPrograms,
     blit: (target: BaseFBO | null) => void
 ): void => {
-    gl.disable(gl.BLEND);
     programs.curl.bind();
     gl.uniform2f(programs.curl.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.curl.uniforms.uVelocity, velocity.read.attach(0));
@@ -105,7 +104,6 @@ export const applyVorticity = (
     programs: PhysicsPrograms,
     blit: (target: BaseFBO | null) => void
 ): void => {
-    gl.disable(gl.BLEND);
     programs.vorticity.bind();
     gl.uniform2f(programs.vorticity.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.vorticity.uniforms.uVelocity, velocity.read.attach(0));
@@ -126,7 +124,6 @@ export const applyGradientSubtract = (
     programs: PhysicsPrograms,
     blit: (target: BaseFBO | null) => void
 ): void => {
-    gl.disable(gl.BLEND);
     programs.gradientSubtract.bind();
     gl.uniform2f(programs.gradientSubtract.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
     gl.uniform1i(programs.gradientSubtract.uniforms.uPressure, pressure.read.attach(0));

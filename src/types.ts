@@ -211,7 +211,6 @@ export interface Config {
     CURL: number;
     SPLAT_RADIUS: number;
     SPLAT_FORCE: number;
-    COLOR_UPDATE_SPEED: number;
     BACK_COLOR: RGBColor;
     BLOOM_ITERATIONS: number;
     BLOOM_RESOLUTION: number;

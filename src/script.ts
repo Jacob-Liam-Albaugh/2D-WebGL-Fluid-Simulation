@@ -56,16 +56,15 @@ const canvas = document.getElementsByTagName('canvas')[0];
 resizeCanvas();
 
 const config: Config = {
-    SIM_RESOLUTION: 128,
+    SIM_RESOLUTION: 512,
     DYE_RESOLUTION: 1024,
     DENSITY_DISSIPATION: 1,
     VELOCITY_DISSIPATION: 0.2,
     PRESSURE: 0.8,
     PRESSURE_ITERATIONS: 20,
-    CURL: 30,
+    CURL: 5,
     SPLAT_RADIUS: 0.01,
     SPLAT_FORCE: 8000,
-    COLOR_UPDATE_SPEED: 10,
     BACK_COLOR: { r: 0, g: 0, b: 0 },
     BLOOM_ITERATIONS: 8,
     BLOOM_RESOLUTION: 256,
@@ -266,18 +265,7 @@ class Program<T extends ShaderUniforms = ShaderUniforms> {
 
     constructor(vertexShader: WebGLShader, fragmentShader: WebGLShader) {
         this.program = createProgram(vertexShader, fragmentShader);
-        this.uniforms = {} as T;
-        const uniformCount = gl.getProgramParameter(this.program, gl.ACTIVE_UNIFORMS);
-        for (let i = 0; i < uniformCount; i++) {
-            const uniformInfo = gl.getActiveUniform(this.program, i);
-            if (uniformInfo) {
-                const location = gl.getUniformLocation(this.program, uniformInfo.name);
-                if (location) {
-                    // We know this is safe because we're only dealing with WebGLUniformLocation
-                    (this.uniforms as Record<string, WebGLUniformLocation>)[uniformInfo.name] = location;
-                }
-            }
-        }
+        this.uniforms = getUniforms(this.program) as T;
     }
 
     bind() {
@@ -315,17 +303,7 @@ class Material {
 
         if (program == this.activeProgram) return;
 
-        this.uniforms = {};
-        const uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
-        for (let i = 0; i < uniformCount; i++) {
-            const uniformInfo = gl.getActiveUniform(program, i);
-            if (uniformInfo) {
-                const location = gl.getUniformLocation(program, uniformInfo.name);
-                if (location) {
-                    this.uniforms[uniformInfo.name] = location;
-                }
-            }
-        }
+        this.uniforms = getUniforms(program);
         this.activeProgram = program;
     }
 
@@ -884,6 +862,7 @@ function applyInputs() {
  * @returns {void}
  */
 function step(dt: number): void {
+    // Disable blending once at the start
     gl.disable(gl.BLEND);
 
     const programs: PhysicsPrograms = {
@@ -901,18 +880,21 @@ function step(dt: number): void {
     // Apply divergence and pressure
     applyDivergence(gl, velocity, divergence, programs, blit);
     
+    // Clear pressure
     clearProgram.bind();
     gl.uniform1i(clearProgram.uniforms.uTexture!, pressure.read.attach(0));
     gl.uniform1f(clearProgram.uniforms.value!, config.PRESSURE);
     blit(pressure.write);
     pressure.swap();
 
-    applyPressure(gl, config, pressure, divergence, programs, blit);
+    // Apply pressure and gradient subtraction
+    applyPressure(gl, config, pressure, divergence, velocity, programs, blit);
     applyGradientSubtract(gl, pressure, velocity, programs, blit);
 
-    // Apply advection
+    // Apply advection with proper linear filtering support
     const supportLinearFiltering = ext.supportLinearFiltering ?? false;
     
+    // Advect velocity
     applyAdvection(
         gl,
         velocity,
@@ -924,6 +906,7 @@ function step(dt: number): void {
         supportLinearFiltering
     );
 
+    // Advect dye
     applyAdvection(
         gl,
         velocity,
@@ -1184,4 +1167,24 @@ function compileShader(type: number, source: string, keywords?: string[]): WebGL
         console.trace(gl.getShaderInfoLog(shader));
 
     return shader;
+}
+
+/**
+ * Get uniforms from WebGL program
+ * @param {WebGLProgram} program - The WebGL program to get uniforms from
+ * @returns {Record<string, WebGLUniformLocation>} Object containing uniform locations
+ */
+function getUniforms(program: WebGLProgram): Record<string, WebGLUniformLocation> {
+    const uniforms: Record<string, WebGLUniformLocation> = {};
+    const uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < uniformCount; i++) {
+        const uniformName = gl.getActiveUniform(program, i)?.name;
+        if (uniformName) {
+            const location = gl.getUniformLocation(program, uniformName);
+            if (location) {
+                uniforms[uniformName] = location;
+            }
+        }
+    }
+    return uniforms;
 }
