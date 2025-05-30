@@ -220,6 +220,14 @@ export interface Config {
     SUNRAYS_RESOLUTION: number;
     SUNRAYS_WEIGHT: number;
     COLOR_SCHEME: ColorConfiguration;
+    DUFFING: {
+        NUM_OSCILLATORS: number;
+        DELTA: number;      // damping coefficient
+        BETA: number;       // linear stiffness
+        ALPHA: number;      // cubic stiffness
+        GAMMA: number;      // forcing amplitude
+        OMEGA: number;      // forcing frequency
+    };
 }
 
 export  interface WebGL2Constants {

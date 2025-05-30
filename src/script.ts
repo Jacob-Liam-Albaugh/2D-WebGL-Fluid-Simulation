@@ -45,22 +45,30 @@ const config: Config = {
     SIM_RESOLUTION: 512,
     DYE_RESOLUTION: 1024,
     DENSITY_DISSIPATION: 1,
-    VELOCITY_DISSIPATION: 0.2,
+    VELOCITY_DISSIPATION: 0.7,
     PRESSURE: 0.8,
     PRESSURE_ITERATIONS: 20,
     CURL: 0.5,
-    SPLAT_RADIUS: 0.01,
+    SPLAT_RADIUS: 0.0003,
     SPLAT_FORCE: 8000,
     BACK_COLOR: { r: 0, g: 0, b: 0 },
     BLOOM_ITERATIONS: 10,
     BLOOM_RESOLUTION: 256,
-    BLOOM_INTENSITY: 0.3,
+    BLOOM_INTENSITY: 0.15,
     BLOOM_THRESHOLD: 0.0,
     BLOOM_SOFT_KNEE: 0.7,
     SUNRAYS_RESOLUTION: 256,
     SUNRAYS_WEIGHT: 0.1,
     COLOR_SCHEME: 'dusk',
-  };
+    DUFFING: {
+        NUM_OSCILLATORS: 8,
+        DELTA: 0.2,      // increased damping for better containment
+        BETA: 0.08,      // increased linear stiffness for more central attraction
+        ALPHA: 0.9,      // slightly increased cubic stiffness
+        GAMMA: 0.8,      // reduced forcing amplitude for smaller movements
+        OMEGA: 0.4       // keep same frequency for smooth patterns
+    }
+};
 
 // Use the config defined above
 function initColorScheme(scheme: ColorConfiguration = config.COLOR_SCHEME): void {
@@ -695,7 +703,8 @@ updateKeywords();
 const pointerManager = new PointerManager(
     canvas,
     getColorFromScheme,
-    (splatData: SplatData) => handleSplat(splatData)
+    (splatData: SplatData) => handleSplat(splatData),
+    config
 );
 
 let lastUpdateTime = Date.now();
