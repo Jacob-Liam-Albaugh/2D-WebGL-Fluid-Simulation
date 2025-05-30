@@ -11,13 +11,16 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    outDir: 'dist',
+    assetsDir: 'assets',
     sourcemap: true
   },
   server: {
     fs: {
       strict: false,
       allow: ['..']
-    }
+    },
+    open: true
   },
   optimizeDeps: {
     include: ['dat.gui']

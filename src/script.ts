@@ -19,14 +19,16 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+ SOFTWARE.
 */
 
 'use strict';
 
+import { ColorConfiguration } from './colorConfigurations';
+
 // Import managers for their functionality
 import { applyBloom, initBloomFramebuffers, initBloomShaders } from './bloomManager';
-import { drawColor as drawBackgroundColor, getRandomColor, initColorShaders, setColorScheme } from './colorManager';
+import { drawColor as drawBackgroundColor, getRandomColor, initColorShaders, RGBColor, setColorScheme } from './colorManager';
 import { applyCurl, applyDivergence, applyGradientSubtract, applyPressure, applyVorticity, initPhysicsShaders } from './physicsManager';
 import { applyAdvection, handlePointerSplat, initSplatShaders } from './splatManager';
 import { applySunrays, applySunraysBlur, initSunraysFramebuffers, initSunraysShaders } from './sunraysManager';
@@ -75,42 +77,59 @@ import { applySunrays, applySunraysBlur, initSunraysFramebuffers, initSunraysSha
  * @typedef {ColorConfiguration} ColorScheme
  */
 
-/**
- * @typedef {Object} SimulationConfig
- * @property {number} SIM_RESOLUTION - Resolution for simulation calculations
- * @property {number} DYE_RESOLUTION - Resolution for dye calculations
- * @property {number} DENSITY_DISSIPATION - Rate at which density dissipates
- * @property {number} VELOCITY_DISSIPATION - Rate at which velocity dissipates
- * @property {number} PRESSURE - Pressure constant
- * @property {number} PRESSURE_ITERATIONS - Number of pressure iterations
- * @property {number} CURL - Curl constant
- * @property {number} SPLAT_RADIUS - Radius of splats
- * @property {number} SPLAT_FORCE - Force of splats
- * @property {number} COLOR_UPDATE_SPEED - Speed of color updates
- * @property {Color} BACK_COLOR - Background color
- * @property {number} BLOOM_ITERATIONS - Number of bloom iterations
- * @property {number} BLOOM_RESOLUTION - Resolution for bloom effect
- * @property {number} BLOOM_INTENSITY - Intensity of bloom effect
- * @property {number} BLOOM_THRESHOLD - Threshold for bloom effect
- * @property {number} BLOOM_SOFT_KNEE - Soft knee parameter for bloom
- * @property {number} SUNRAYS_RESOLUTION - Resolution for sunrays effect
- * @property {number} SUNRAYS_WEIGHT - Weight of sunrays effect
- * @property {ColorScheme} COLOR_SCHEME - Current color scheme
- */
+type ColorSchemeName = 'dusk' | 'default' | 'fire' | 'red_to_purple' | 'blue_to_yellow' | 'red_to_blue' | 'sunset' | 'blue_to_purple' | 'blue_to_pink' | 'crazy' | 'rosolane_to_helvetia';
 
-/**
- * @typedef {Object} Pointer
- * @property {number} id - Unique identifier
- * @property {number} texcoordX - Current X texture coordinate
- * @property {number} texcoordY - Current Y texture coordinate
- * @property {number} prevTexcoordX - Previous X texture coordinate
- * @property {number} prevTexcoordY - Previous Y texture coordinate
- * @property {number} deltaX - Change in X position
- * @property {number} deltaY - Change in Y position
- * @property {boolean} down - Whether pointer is pressed
- * @property {boolean} moved - Whether pointer has moved
- * @property {Color} color - Current color
- */
+interface SimulationConfig {
+    SIM_RESOLUTION: number;
+    DYE_RESOLUTION: number;
+    DENSITY_DISSIPATION: number;
+    VELOCITY_DISSIPATION: number;
+    PRESSURE: number;
+    PRESSURE_ITERATIONS: number;
+    CURL: number;
+    SPLAT_RADIUS: number;
+    SPLAT_FORCE: number;
+    COLOR_UPDATE_SPEED: number;
+    BACK_COLOR: RGBColor;
+    BLOOM_ITERATIONS: number;
+    BLOOM_RESOLUTION: number;
+    BLOOM_INTENSITY: number;
+    BLOOM_THRESHOLD: number;
+    BLOOM_SOFT_KNEE: number;
+    SUNRAYS_RESOLUTION: number;
+    SUNRAYS_WEIGHT: number;
+    COLOR_SCHEME: ColorConfiguration;
+}
+
+interface Pointer {
+    id: number;
+    texcoordX: number;
+    texcoordY: number;
+    prevTexcoordX: number;
+    prevTexcoordY: number;
+    deltaX: number;
+    deltaY: number;
+    down: boolean;
+    moved: boolean;
+    color: RGBColor;
+}
+
+class PointerPrototype implements Pointer {
+    id: number = -1;
+    texcoordX: number = 0;
+    texcoordY: number = 0;
+    prevTexcoordX: number = 0;
+    prevTexcoordY: number = 0;
+    deltaX: number = 0;
+    deltaY: number = 0;
+    down: boolean = false;
+    moved: boolean = false;
+    color: RGBColor;
+
+    constructor() {
+        this.color = getColorFromScheme();
+    }
+}
 
 /**
  * @typedef {SplatFramebuffer} FBO
@@ -130,6 +149,69 @@ import { applySunrays, applySunraysBlur, initSunraysFramebuffers, initSunraysSha
  * @property {number} ext.halfFloatTexType - Half float texture type
  * @property {boolean} ext.supportLinearFiltering - Whether linear filtering is supported
  */
+
+// Add these interfaces at the top of the file, after the imports
+interface FBO {
+    texture: WebGLTexture;
+    fbo: WebGLFramebuffer;
+    width: number;
+    height: number;
+    texelSizeX: number;
+    texelSizeY: number;
+    attach: (id: number) => number;
+}
+
+interface DoubleFBO {
+    width: number;
+    height: number;
+    texelSizeX: number;
+    texelSizeY: number;
+    read: FBO;
+    write: FBO;
+    swap: () => void;
+    texture: WebGLTexture;
+    fbo: WebGLFramebuffer;
+    attach: (id: number) => number;
+}
+
+// Add these interfaces for physics programs
+interface PhysicsPrograms {
+    pressure: {
+        bind: () => void;
+        uniforms: {
+            uPressure: WebGLUniformLocation;
+            uDivergence: WebGLUniformLocation;
+        };
+    };
+    divergence: {
+        bind: () => void;
+        uniforms: {
+            uVelocity: WebGLUniformLocation;
+        };
+    };
+    curl: {
+        bind: () => void;
+        uniforms: {
+            uVelocity: WebGLUniformLocation;
+        };
+    };
+    vorticity: {
+        bind: () => void;
+        uniforms: {
+            uVelocity: WebGLUniformLocation;
+            uCurl: WebGLUniformLocation;
+            curl: WebGLUniformLocation;
+            dt: WebGLUniformLocation;
+        };
+    };
+    gradientSubtract: {
+        bind: () => void;
+        uniforms: {
+            uPressure: WebGLUniformLocation;
+            uVelocity: WebGLUniformLocation;
+        };
+    };
+}
 
 // Simulation section
 /** @type {HTMLCanvasElement} */
@@ -156,95 +238,123 @@ let config = {
     BLOOM_SOFT_KNEE: 0.7,
     SUNRAYS_RESOLUTION: 196,
     SUNRAYS_WEIGHT: 0.2,
-    COLOR_SCHEME: 'dusk'
+    COLOR_SCHEME: 'dusk' as ColorConfiguration
 };
 
 /**
- * @param {string} [scheme=config.COLOR_SCHEME] - The color scheme to initialize
+ * @param {ColorConfiguration} [scheme=config.COLOR_SCHEME] - The color scheme to initialize
  * @returns {void}
  */
-function initColorScheme(scheme = config.COLOR_SCHEME) {
+function initColorScheme(scheme: ColorConfiguration = config.COLOR_SCHEME): void {
     setColorScheme(scheme);
 }
 
 /**
  * @returns {Color} A random color from the current scheme
  */
-function getColorFromScheme() {
+function getColorFromScheme(): RGBColor {
     return getRandomColor();
 }
 
 // Initialize the default color scheme
 initColorScheme();
 
-/**
- * @constructor
- * @returns {Pointer} A new pointer instance
- */
-function pointerPrototype() {
-    this.id = -1;
-    this.texcoordX = 0;
-    this.texcoordY = 0;
-    this.prevTexcoordX = 0;
-    this.prevTexcoordY = 0;
-    this.deltaX = 0;
-    this.deltaY = 0;
-    this.down = false;
-    this.moved = false;
-    this.color = getColorFromScheme();
-}
-
 /** @type {Pointer[]} */
-let pointers = [];
-pointers.push(new pointerPrototype());
+let pointers: Pointer[] = [];
+pointers.push(new PointerPrototype());
 
 /** @type {{gl: WebGLRenderingContext, ext: Object}} */
-const { gl, ext } = getWebGLContext(canvas);
+const { gl, ext }: WebGLContext = getWebGLContext(canvas);
+
+interface WebGL2Constants {
+    HALF_FLOAT: 0x140B;
+    RGBA16F: 0x881A;
+    RG16F: 0x822F;
+    RG: 0x8227;
+    R16F: 0x822D;
+    RED: 0x1903;
+}
+
+interface WebGL2RenderingContext extends WebGLRenderingContext, WebGL2Constants {}
+
+interface WebGLContext {
+    gl: WebGL2RenderingContext | WebGLRenderingContext;
+    ext: {
+        formatRGBA: { internalFormat: number; format: number } | null;
+        formatRG: { internalFormat: number; format: number } | null;
+        formatR: { internalFormat: number; format: number } | null;
+        halfFloatTexType: number;
+        supportLinearFiltering: boolean | null;
+    };
+}
 
 /**
  * @param {HTMLCanvasElement} canvas - The canvas element
  * @returns {WebGLContext} WebGL context and extensions
  */
-function getWebGLContext(canvas) {
-    const params = { alpha: true, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: false };
+function getWebGLContext(canvas: HTMLCanvasElement): WebGLContext {
+    const params: WebGLContextAttributes = { 
+        alpha: true, 
+        depth: false, 
+        stencil: false, 
+        antialias: false, 
+        preserveDrawingBuffer: false 
+    };
 
-    /** @type {WebGLRenderingContext|null} */
-    let gl = canvas.getContext('webgl2', params);
-    const isWebGL2 = !!gl;
-    if (!isWebGL2)
-        gl = canvas.getContext('webgl', params) || canvas.getContext('experimental-webgl', params);
+    const gl2Context = canvas.getContext('webgl2', params);
+    const isWebGL2 = !!gl2Context;
+    let gl: WebGL2RenderingContext | WebGLRenderingContext;
+    
+    if (isWebGL2 && gl2Context) {
+        gl = gl2Context;
+    } else {
+        const gl1Context = canvas.getContext('webgl', params) || canvas.getContext('experimental-webgl', params);
+        if (!gl1Context) {
+            throw new Error('WebGL not supported');
+        }
+        gl = gl1Context as WebGLRenderingContext;
+    }
 
-    /** @type {Object|null} */
-    let halfFloat;
-    /** @type {Object|null} */
-    let supportLinearFiltering;
+    let halfFloat: any;
+    let supportLinearFiltering: boolean | null = null;
+    
     if (isWebGL2) {
         gl.getExtension('EXT_color_buffer_float');
-        supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
+        supportLinearFiltering = !!gl.getExtension('OES_texture_float_linear');
     } else {
         halfFloat = gl.getExtension('OES_texture_half_float');
-        supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
+        supportLinearFiltering = !!gl.getExtension('OES_texture_half_float_linear');
     }
 
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
-    const halfFloatTexType = isWebGL2 ? gl.HALF_FLOAT : halfFloat.HALF_FLOAT_OES;
-    /** @type {{internalFormat: number, format: number}|null} */
-    let formatRGBA;
-    /** @type {{internalFormat: number, format: number}|null} */
-    let formatRG;
-    /** @type {{internalFormat: number, format: number}|null} */
-    let formatR;
+    // WebGL2 constants
+    const HALF_FLOAT = 0x140B;
+    const RGBA16F = 0x881A;
+    const RG16F = 0x822F;
+    const RG = 0x8227;
+    const R16F = 0x822D;
+    const RED = 0x1903;
 
-    if (isWebGL2) {
-        formatRGBA = getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, halfFloatTexType);
-        formatRG = getSupportedFormat(gl, gl.RG16F, gl.RG, halfFloatTexType);
-        formatR = getSupportedFormat(gl, gl.R16F, gl.RED, halfFloatTexType);
-    } else {
-        formatRGBA = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
-        formatRG = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
-        formatR = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
-    }
+    const halfFloatTexType = isWebGL2 ? HALF_FLOAT : halfFloat.HALF_FLOAT_OES;
+    let formatRGBA = getSupportedFormat(
+        gl,
+        isWebGL2 ? RGBA16F : gl.RGBA,
+        gl.RGBA,
+        halfFloatTexType
+    );
+    let formatRG = getSupportedFormat(
+        gl,
+        isWebGL2 ? RG16F : gl.RGBA,
+        isWebGL2 ? RG : gl.RGBA,
+        halfFloatTexType
+    );
+    let formatR = getSupportedFormat(
+        gl,
+        isWebGL2 ? R16F : gl.RGBA,
+        isWebGL2 ? RED : gl.RGBA,
+        halfFloatTexType
+    );
 
     return {
         gl,
@@ -258,20 +368,36 @@ function getWebGLContext(canvas) {
     };
 }
 
+interface FormatResult {
+    internalFormat: number;
+    format: number;
+}
+
 /**
  * @param {WebGLRenderingContext} gl - The WebGL context
  * @param {number} internalFormat - The internal format of the texture
  * @param {number} format - The format of the texture
  * @param {number} type - The type of the texture
- * @returns {{internalFormat: number, format: number}|null} The supported format or null
+ * @returns {FormatResult|null} The supported format or null
  */
-function getSupportedFormat(gl, internalFormat, format, type) {
+function getSupportedFormat(
+    gl: WebGLRenderingContext,
+    internalFormat: number,
+    format: number,
+    type: number
+): FormatResult | null {
+    // WebGL2 constants
+    const R16F = 0x822D;
+    const RG16F = 0x822F;
+    const RGBA16F = 0x881A;
+    const RG = 0x8227;
+
     if (!supportRenderTextureFormat(gl, internalFormat, format, type)) {
         switch (internalFormat) {
-            case gl.R16F:
-                return getSupportedFormat(gl, gl.RG16F, gl.RG, type);
-            case gl.RG16F:
-                return getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, type);
+            case R16F:
+                return getSupportedFormat(gl, RG16F, RG, type);
+            case RG16F:
+                return getSupportedFormat(gl, RGBA16F, gl.RGBA, type);
             default:
                 return null;
         }
@@ -290,8 +416,13 @@ function getSupportedFormat(gl, internalFormat, format, type) {
  * @param {number} type - The type of the texture
  * @returns {boolean} Whether the format is supported
  */
-function supportRenderTextureFormat(gl, internalFormat, format, type) {
-    let texture = gl.createTexture();
+function supportRenderTextureFormat(
+    gl: WebGLRenderingContext,
+    internalFormat: number,
+    format: number,
+    type: number
+): boolean {
+    const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -299,48 +430,88 @@ function supportRenderTextureFormat(gl, internalFormat, format, type) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, 4, 4, 0, format, type, null);
 
-    let fbo = gl.createFramebuffer();
+    const fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture!, 0);
 
-    let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    return status == gl.FRAMEBUFFER_COMPLETE;
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    return status === gl.FRAMEBUFFER_COMPLETE;
 }
 
-/**
- * @class
- * @implements {ColorProgram}
- */
-class Material {
-    /**
-     * @param {WebGLShader} vertexShader - The vertex shader
-     * @param {string} fragmentShaderSource - The fragment shader source code
-     */
-    constructor(vertexShader, fragmentShaderSource) {
-        /** @type {WebGLShader} */
-        this.vertexShader = vertexShader;
-        /** @type {string} */
-        this.fragmentShaderSource = fragmentShaderSource;
-        /** @type {WebGLProgram[]} */
-        this.programs = [];
-        /** @type {WebGLProgram|null} */
-        this.activeProgram = null;
-        /** @type {Object.<string, WebGLUniformLocation>} */
-        this.uniforms = [];
+// Add these interfaces near the top with other interfaces
+interface UniformLocations {
+    [key: string]: WebGLUniformLocation;
+}
+
+// Update ShaderUniforms to make all properties optional
+interface ShaderUniforms {
+    [key: string]: WebGLUniformLocation;
+}
+
+interface PhysicsUniforms extends ShaderUniforms {
+    uPressure: WebGLUniformLocation;
+    uDivergence: WebGLUniformLocation;
+    uVelocity: WebGLUniformLocation;
+    uCurl: WebGLUniformLocation;
+    curl: WebGLUniformLocation;
+    dt: WebGLUniformLocation;
+}
+
+interface SplatProgramUniforms {
+    uTarget: WebGLUniformLocation;
+    aspectRatio: WebGLUniformLocation;
+    point: WebGLUniformLocation;
+    color: WebGLUniformLocation;
+    radius: WebGLUniformLocation;
+}
+
+class Program {
+    public uniforms: ShaderUniforms;
+    private program: WebGLProgram;
+
+    constructor(vertexShader: WebGLShader, fragmentShader: WebGLShader) {
+        this.program = createProgram(vertexShader, fragmentShader);
+        this.uniforms = {};
+        const uniformCount = gl.getProgramParameter(this.program, gl.ACTIVE_UNIFORMS);
+        for (let i = 0; i < uniformCount; i++) {
+            const uniformInfo = gl.getActiveUniform(this.program, i);
+            if (uniformInfo) {
+                const location = gl.getUniformLocation(this.program, uniformInfo.name);
+                if (location) {
+                    this.uniforms[uniformInfo.name] = location;
+                }
+            }
+        }
     }
 
-    /**
-     * @param {string[]} keywords - Shader keywords to set
-     * @returns {void}
-     */
-    setKeywords(keywords) {
+    bind() {
+        gl.useProgram(this.program);
+    }
+}
+
+// Update the Material class to use ShaderUniforms
+class Material {
+    private vertexShader: WebGLShader;
+    private fragmentShaderSource: string;
+    private programs: { [key: number]: WebGLProgram };
+    private activeProgram: WebGLProgram | null;
+    public uniforms: ShaderUniforms;
+
+    constructor(vertexShader: WebGLShader, fragmentShaderSource: string) {
+        this.vertexShader = vertexShader;
+        this.fragmentShaderSource = fragmentShaderSource;
+        this.programs = {};
+        this.activeProgram = null;
+        this.uniforms = {};
+    }
+
+    setKeywords(keywords: string[]) {
         let hash = 0;
         for (let i = 0; i < keywords.length; i++)
             hash += hashCode(keywords[i]);
 
         let program = this.programs[hash];
-        if (program == null)
-        {
+        if (program == null) {
             let fragmentShader = compileShader(gl.FRAGMENT_SHADER, this.fragmentShaderSource, keywords);
             program = createProgram(this.vertexShader, fragmentShader);
             this.programs[hash] = program;
@@ -348,40 +519,24 @@ class Material {
 
         if (program == this.activeProgram) return;
 
-        this.uniforms = getUniforms(program);
+        this.uniforms = {};
+        const uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+        for (let i = 0; i < uniformCount; i++) {
+            const uniformInfo = gl.getActiveUniform(program, i);
+            if (uniformInfo) {
+                const location = gl.getUniformLocation(program, uniformInfo.name);
+                if (location) {
+                    this.uniforms[uniformInfo.name] = location;
+                }
+            }
+        }
         this.activeProgram = program;
     }
 
-    /**
-     * @returns {void}
-     */
     bind() {
-        gl.useProgram(this.activeProgram);
-    }
-}
-
-/**
- * @class
- * @implements {ColorProgram}
- */
-class Program {
-    /**
-     * @param {WebGLShader} vertexShader - The vertex shader
-     * @param {WebGLShader} fragmentShader - The fragment shader
-     */
-    constructor(vertexShader, fragmentShader) {
-        /** @type {Object.<string, WebGLUniformLocation>} */
-        this.uniforms = {};
-        /** @type {WebGLProgram} */
-        this.program = createProgram(vertexShader, fragmentShader);
-        this.uniforms = getUniforms(this.program);
-    }
-
-    /**
-     * @returns {void}
-     */
-    bind() {
-        gl.useProgram(this.program);
+        if (this.activeProgram) {
+            gl.useProgram(this.activeProgram);
+        }
     }
 }
 
@@ -390,8 +545,11 @@ class Program {
  * @param {WebGLShader} fragmentShader - The fragment shader
  * @returns {WebGLProgram} The created program
  */
-function createProgram (vertexShader, fragmentShader) {
-    let program = gl.createProgram();
+function createProgram(vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram {
+    const program = gl.createProgram();
+    if (!program) {
+        throw new Error('Failed to create WebGL program');
+    }
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
@@ -403,45 +561,12 @@ function createProgram (vertexShader, fragmentShader) {
 }
 
 /**
- * @param {WebGLProgram} program - The WebGL program
- * @returns {Object.<string, WebGLUniformLocation>} The uniforms
- */
-function getUniforms (program) {
-    let uniforms = [];
-    let uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < uniformCount; i++) {
-        let uniformName = gl.getActiveUniform(program, i).name;
-        uniforms[uniformName] = gl.getUniformLocation(program, uniformName);
-    }
-    return uniforms;
-}
-
-/**
- * @param {number} type - The type of shader
- * @param {string} source - The shader source code
- * @param {string[]} [keywords] - Optional keywords to add
- * @returns {WebGLShader} The compiled shader
- */
-function compileShader (type, source, keywords) {
-    source = addKeywords(source, keywords);
-
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-        console.trace(gl.getShaderInfoLog(shader));
-
-    return shader;
-};
-
-/**
  * @param {string} source - The shader source code
  * @param {string[]} [keywords] - Optional keywords to add
  * @returns {string} The modified source code
  */
-function addKeywords (source, keywords) {
-    if (keywords == null) return source;
+function addKeywords(source: string, keywords?: string[]): string {
+    if (!keywords) return source;
     let keywordsString = '';
     keywords.forEach(keyword => {
         keywordsString += '#define ' + keyword + '\n';
@@ -563,7 +688,7 @@ const blit = (() => {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(0);
 
-    return (target, clear = false) => {
+    return (target: FBO | null, clear = false) => {
         if (target == null)
         {
             gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
@@ -585,26 +710,31 @@ const blit = (() => {
 
 
 /** @type {DoubleFBO} */
-let dye;
+let dye: DoubleFBO;
 /** @type {DoubleFBO} */
-let velocity;
-/** @type {SinglePhysicsFramebuffer} */
-let divergence;
-/** @type {SinglePhysicsFramebuffer} */
-let curl;
+let velocity: DoubleFBO;
+/** @type {FBO} */
+let divergence: FBO;
+/** @type {FBO} */
+let curl: FBO;
 /** @type {DoubleFBO} */
-let pressure;
-/** @type {BloomFramebuffer} */
-let bloom;
-/** @type {BloomFramebuffer[]} */
-let bloomFramebuffers = [];
-/** @type {SunraysFramebuffer} */
-let sunrays;
-/** @type {SunraysFramebuffer} */
-let sunraysTemp;
+let pressure: DoubleFBO;
+/** @type {FBO} */
+let bloom: FBO;
+/** @type {FBO[]} */
+let bloomFramebuffers: FBO[] = [];
+/** @type {FBO} */
+let sunrays: FBO;
+/** @type {FBO} */
+let sunraysTemp: FBO;
 
 /** @type {{texture: WebGLTexture, width: number, height: number, attach: (id: number) => number}} */
-let ditheringTexture = createTextureAsync('/src/LDR_LLL1_0.png');
+let ditheringTexture: {
+    texture: WebGLTexture | null;
+    width: number;
+    height: number;
+    attach: (id: number) => number;
+} = createTextureAsync('/src/LDR_LLL1_0.png');
 
 // Initialize physics shaders
 const physicsShaders = initPhysicsShaders(gl, baseVertexShader, compileShader);
@@ -670,6 +800,11 @@ function initFramebuffers() {
     const rgba = ext.formatRGBA;
     const rg = ext.formatRG;
     const r = ext.formatR;
+    
+    if (!rgba || !rg || !r) {
+        throw new Error('Required texture formats not supported');
+    }
+    
     const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
 
     gl.disable(gl.BLEND);
@@ -695,12 +830,20 @@ function initFramebuffers() {
         intensity: config.BLOOM_INTENSITY,
         threshold: config.BLOOM_THRESHOLD,
         softKnee: config.BLOOM_SOFT_KNEE
-    }, createFBO, getResolution, ext);
+    }, createFBO, getResolution, {
+        halfFloatTexType: texType,
+        formatRGBA: rgba,
+        supportLinearFiltering: !!ext.supportLinearFiltering
+    });
 
     const { sunrays: newSunrays, temp: newSunraysTemp } = initSunraysFramebuffers(gl, {
         resolution: config.SUNRAYS_RESOLUTION,
         weight: config.SUNRAYS_WEIGHT
-    }, createFBO, getResolution, ext);
+    }, createFBO, getResolution, {
+        halfFloatTexType: texType,
+        formatR: r,
+        supportLinearFiltering: !!ext.supportLinearFiltering
+    });
 
     sunrays = newSunrays;
     sunraysTemp = newSunraysTemp;
@@ -715,9 +858,18 @@ function initFramebuffers() {
  * @param {number} param - Texture parameter
  * @returns {FBO} The created FBO object
  */
-function createFBO(w, h, internalFormat, format, type, param) {
+function createFBO(
+    w: number,
+    h: number,
+    internalFormat: number,
+    format: number,
+    type: number,
+    param: number
+): FBO {
     gl.activeTexture(gl.TEXTURE0);
-    let texture = gl.createTexture();
+    const texture = gl.createTexture();
+    if (!texture) throw new Error('Failed to create texture');
+    
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, param);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, param);
@@ -725,14 +877,16 @@ function createFBO(w, h, internalFormat, format, type, param) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
 
-    let fbo = gl.createFramebuffer();
+    const fbo = gl.createFramebuffer();
+    if (!fbo) throw new Error('Failed to create framebuffer');
+    
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
     gl.viewport(0, 0, w, h);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    let texelSizeX = 1.0 / w;
-    let texelSizeY = 1.0 / h;
+    const texelSizeX = 1.0 / w;
+    const texelSizeY = 1.0 / h;
 
     return {
         texture,
@@ -741,7 +895,7 @@ function createFBO(w, h, internalFormat, format, type, param) {
         height: h,
         texelSizeX,
         texelSizeY,
-        attach(id) {
+        attach(id: number): number {
             gl.activeTexture(gl.TEXTURE0 + id);
             gl.bindTexture(gl.TEXTURE_2D, texture);
             return id;
@@ -758,7 +912,14 @@ function createFBO(w, h, internalFormat, format, type, param) {
  * @param {number} param - Texture parameter
  * @returns {DoubleFBO} The created double FBO object
  */
-function createDoubleFBO(w, h, internalFormat, format, type, param) {
+function createDoubleFBO(
+    w: number,
+    h: number,
+    internalFormat: number,
+    format: number,
+    type: number,
+    param: number
+): DoubleFBO {
     let fbo1 = createFBO(w, h, internalFormat, format, type, param);
     let fbo2 = createFBO(w, h, internalFormat, format, type, param);
 
@@ -767,22 +928,19 @@ function createDoubleFBO(w, h, internalFormat, format, type, param) {
         height: h,
         texelSizeX: fbo1.texelSizeX,
         texelSizeY: fbo1.texelSizeY,
-        get read () {
-            return fbo1;
-        },
-        set read (value) {
-            fbo1 = value;
-        },
-        get write () {
-            return fbo2;
-        },
-        set write (value) {
-            fbo2 = value;
-        },
-        swap () {
+        read: fbo1,
+        write: fbo2,
+        texture: fbo1.texture,
+        fbo: fbo1.fbo,
+        attach: (id: number) => fbo1.attach(id),
+        swap() {
             let temp = fbo1;
             fbo1 = fbo2;
             fbo2 = temp;
+            this.read = fbo1;
+            this.write = fbo2;
+            this.texture = fbo1.texture;
+            this.fbo = fbo1.fbo;
         }
     };
 }
@@ -797,7 +955,15 @@ function createDoubleFBO(w, h, internalFormat, format, type, param) {
  * @param {number} param - Texture parameter
  * @returns {FBO} The resized FBO
  */
-function resizeFBO(target, w, h, internalFormat, format, type, param) {
+function resizeFBO(
+    target: FBO,
+    w: number,
+    h: number,
+    internalFormat: number,
+    format: number,
+    type: number,
+    param: number
+): FBO {
     let newFBO = createFBO(w, h, internalFormat, format, type, param);
     copyProgram.bind();
     gl.uniform1i(copyProgram.uniforms.uTexture, target.attach(0));
@@ -815,7 +981,15 @@ function resizeFBO(target, w, h, internalFormat, format, type, param) {
  * @param {number} param - Texture parameter
  * @returns {DoubleFBO} The resized double FBO
  */
-function resizeDoubleFBO(target, w, h, internalFormat, format, type, param) {
+function resizeDoubleFBO(
+    target: DoubleFBO,
+    w: number,
+    h: number,
+    internalFormat: number,
+    format: number,
+    type: number,
+    param: number
+): DoubleFBO {
     if (target.width == w && target.height == h)
         return target;
     target.read = resizeFBO(target.read, w, h, internalFormat, format, type, param);
@@ -831,7 +1005,7 @@ function resizeDoubleFBO(target, w, h, internalFormat, format, type, param) {
  * @param {string} url - URL of the texture to load
  * @returns {{texture: WebGLTexture, width: number, height: number, attach: function(number): number}} The created texture object
  */
-function createTextureAsync(url) {
+function createTextureAsync(url: string) {
     let texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -844,7 +1018,7 @@ function createTextureAsync(url) {
         texture,
         width: 1,
         height: 1,
-        attach(id) {
+        attach(id: number) {
             gl.activeTexture(gl.TEXTURE0 + id);
             gl.bindTexture(gl.TEXTURE_2D, texture);
             return id;
@@ -874,8 +1048,11 @@ function updateKeywords() {
     displayMaterial.setKeywords(displayKeywords);
 }
 
-updateKeywords();
+// Initialize framebuffers
 initFramebuffers();
+
+// Initialize display keywords
+updateKeywords();
 
 let lastUpdateTime = Date.now();
 update();
@@ -934,47 +1111,56 @@ function applyInputs() {
  * @param {number} dt - Delta time in seconds
  * @returns {void}
  */
-function step(dt) {
+function step(dt: number): void {
     gl.disable(gl.BLEND);
 
+    const programs: PhysicsPrograms = {
+        pressure: pressureProgram as unknown as PhysicsPrograms['pressure'],
+        divergence: divergenceProgram as unknown as PhysicsPrograms['divergence'],
+        curl: curlProgram as unknown as PhysicsPrograms['curl'],
+        vorticity: vorticityProgram as unknown as PhysicsPrograms['vorticity'],
+        gradientSubtract: gradienSubtractProgram as unknown as PhysicsPrograms['gradientSubtract']
+    };
+
     // Apply curl and vorticity
-    applyCurl(gl, velocity, curl, { curl: curlProgram }, blit);
-    applyVorticity(gl, config, dt, velocity, curl, { vorticity: vorticityProgram }, blit);
+    applyCurl(gl, velocity as any, curl as any, programs, blit);
+    applyVorticity(gl, config, dt, velocity as any, curl as any, programs, blit);
 
     // Apply divergence and pressure
-    applyDivergence(gl, velocity, divergence, { divergence: divergenceProgram }, blit);
+    applyDivergence(gl, velocity as any, divergence as any, programs, blit);
     
     clearProgram.bind();
-    gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
-    gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE);
+    gl.uniform1i(clearProgram.uniforms.uTexture!, pressure.read.attach(0));
+    gl.uniform1f(clearProgram.uniforms.value!, config.PRESSURE);
     blit(pressure.write);
     pressure.swap();
 
-    applyPressure(gl, config, pressure, divergence, { pressure: pressureProgram }, blit);
-    applyGradientSubtract(gl, pressure, velocity, { gradientSubtract: gradienSubtractProgram }, blit);
+    applyPressure(gl, config, pressure as any, divergence as any, programs, blit);
+    applyGradientSubtract(gl, pressure as any, velocity as any, programs, blit);
 
-    // Apply advection to velocity
+    // Apply advection
+    const supportLinearFiltering = ext.supportLinearFiltering ?? false;
+    
     applyAdvection(
         gl,
-        velocity,
-        velocity,
+        velocity as any,
+        velocity as any,
         dt,
         config.VELOCITY_DISSIPATION,
-        advectionProgram,
+        advectionProgram as any,
         blit,
-        ext.supportLinearFiltering
+        supportLinearFiltering
     );
 
-    // Apply advection to dye
     applyAdvection(
         gl,
-        velocity,
-        dye,
+        velocity as any,
+        dye as any,
         dt,
         config.DENSITY_DISSIPATION,
-        advectionProgram,
+        advectionProgram as any,
         blit,
-        ext.supportLinearFiltering
+        supportLinearFiltering
     );
 }
 
@@ -982,7 +1168,7 @@ function step(dt) {
  * @param {FBO|null} target - The render target
  * @returns {void}
  */
-function render(target) {
+function render(target: FBO | null): void {
     applyBloom(gl, {
         iterations: config.BLOOM_ITERATIONS,
         resolution: config.BLOOM_RESOLUTION,
@@ -990,25 +1176,25 @@ function render(target) {
         threshold: config.BLOOM_THRESHOLD,
         softKnee: config.BLOOM_SOFT_KNEE
     }, dye.read, bloom, blit, {
-        bloomPrefilter: bloomPrefilterProgram,
-        bloomBlur: bloomBlurProgram,
-        bloomFinal: bloomFinalProgram
+        bloomPrefilter: bloomPrefilterProgram as any,
+        bloomBlur: bloomBlurProgram as any,
+        bloomFinal: bloomFinalProgram as any
     });
 
     applySunrays(gl, {
         resolution: config.SUNRAYS_RESOLUTION,
         weight: config.SUNRAYS_WEIGHT
     }, dye.read, dye.write, sunrays, blit, {
-        sunraysMask: sunraysMaskProgram,
-        sunrays: sunraysProgram
+        sunraysMask: sunraysMaskProgram as any,
+        sunrays: sunraysProgram as any
     });
 
-    applySunraysBlur(gl, sunrays, sunraysTemp, 1, blurProgram, blit);
+    applySunraysBlur(gl, sunrays, sunraysTemp, 1, blurProgram as any, blit);
 
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.BLEND);
 
-    drawBackgroundColor(gl, target, config.BACK_COLOR, colorProgram, blit);
+    drawBackgroundColor(gl, target, config.BACK_COLOR, colorProgram as any, blit);
     drawDisplay(target);
 }
 
@@ -1016,7 +1202,7 @@ function render(target) {
  * @param {FBO|null} target - The render target
  * @returns {void}
  */
-function drawDisplay(target) {
+function drawDisplay(target: FBO | null): void {
     let width = target == null ? gl.drawingBufferWidth : target.width;
     let height = target == null ? gl.drawingBufferHeight : target.height;
 
@@ -1035,7 +1221,7 @@ function drawDisplay(target) {
  * @param {Pointer} pointer - The pointer object
  * @returns {void}
  */
-function splatPointer(pointer) {
+function splatPointer(pointer: Pointer): void {
     handlePointerSplat(
         pointer,
         {
@@ -1043,10 +1229,10 @@ function splatPointer(pointer) {
             SPLAT_RADIUS: config.SPLAT_RADIUS
         },
         gl,
-        velocity,
-        dye,
+        velocity as any,
+        dye as any,
         canvas,
-        splatProgram,
+        splatProgram as any,
         blit
     );
 }
@@ -1055,7 +1241,7 @@ function splatPointer(pointer) {
  * @param {number} radius - The radius to correct
  * @returns {number} The corrected radius
  */
-function correctRadius(radius) {
+function correctRadius(radius: number): number {
     let aspectRatio = canvas.width / canvas.height;
     if (aspectRatio > 1)
         radius *= aspectRatio;
@@ -1067,7 +1253,7 @@ canvas.addEventListener('mousedown', /** @param {MouseEvent} e */ e => {
     let posY = scaleByPixelRatio(e.offsetY);
     let pointer = pointers.find(p => p.id == -1);
     if (pointer == null)
-        pointer = new pointerPrototype();
+        pointer = new PointerPrototype();
     updatePointerDownData(pointer, -1, posX, posY);
 });
 
@@ -1090,7 +1276,7 @@ window.addEventListener('mouseup', () => {
  * @param {number} posY - Y position
  * @returns {void}
  */
-function updatePointerDownData(pointer, id, posX, posY) {
+function updatePointerDownData(pointer: Pointer, id: number, posX: number, posY: number) {
     pointer.id = id;
     pointer.down = true;
     pointer.moved = false;
@@ -1109,7 +1295,7 @@ function updatePointerDownData(pointer, id, posX, posY) {
  * @param {number} posY - Y position
  * @returns {void}
  */
-function updatePointerMoveData(pointer, posX, posY) {
+function updatePointerMoveData(pointer: Pointer, posX: number, posY: number) {
     pointer.prevTexcoordX = pointer.texcoordX;
     pointer.prevTexcoordY = pointer.texcoordY;
     pointer.texcoordX = posX / canvas.width;
@@ -1123,7 +1309,7 @@ function updatePointerMoveData(pointer, posX, posY) {
  * @param {Pointer} pointer - The pointer object
  * @returns {void}
  */
-function updatePointerUpData(pointer) {
+function updatePointerUpData(pointer: Pointer) {
     pointer.down = false;
 }
 
@@ -1131,7 +1317,7 @@ function updatePointerUpData(pointer) {
  * @param {number} delta - The delta X to correct
  * @returns {number} The corrected delta X
  */
-function correctDeltaX(delta) {
+function correctDeltaX(delta: number) {
     let aspectRatio = canvas.width / canvas.height;
     if (aspectRatio < 1) delta *= aspectRatio;
     return delta;
@@ -1141,7 +1327,7 @@ function correctDeltaX(delta) {
  * @param {number} delta - The delta Y to correct
  * @returns {number} The corrected delta Y
  */
-function correctDeltaY(delta) {
+function correctDeltaY(delta: number) {
     let aspectRatio = canvas.width / canvas.height;
     if (aspectRatio > 1) delta /= aspectRatio;
     return delta;
@@ -1151,7 +1337,7 @@ function correctDeltaY(delta) {
  * @param {number} resolution - The resolution to process
  * @returns {{width: number, height: number}} The processed resolution
  */
-function getResolution(resolution) {
+function getResolution(resolution: number) {
     let aspectRatio = gl.drawingBufferWidth / gl.drawingBufferHeight;
     if (aspectRatio < 1)
         aspectRatio = 1.0 / aspectRatio;
@@ -1171,7 +1357,7 @@ function getResolution(resolution) {
  * @param {number} height - The target height
  * @returns {{x: number, y: number}} The texture scale
  */
-function getTextureScale(texture, width, height) {
+function getTextureScale(texture: { texture?: WebGLTexture | null; width: any; height: any; attach?: (id: number) => number; }, width: number, height: number) {
     return {
         x: width / texture.width,
         y: height / texture.height
@@ -1182,7 +1368,7 @@ function getTextureScale(texture, width, height) {
  * @param {number} input - The input value to scale
  * @returns {number} The scaled value
  */
-function scaleByPixelRatio(input) {
+function scaleByPixelRatio(input: number) {
     let pixelRatio = window.devicePixelRatio || 1;
     return Math.floor(input * pixelRatio);
 }
@@ -1191,7 +1377,7 @@ function scaleByPixelRatio(input) {
  * @param {string} s - The string to hash
  * @returns {number} The hash code
  */
-function hashCode(s) {
+function hashCode(s: string) {
     if (s.length == 0) return 0;
     let hash = 0;
     for (let i = 0; i < s.length; i++) {
@@ -1199,4 +1385,27 @@ function hashCode(s) {
         hash |= 0; // Convert to 32bit integer
     }
     return hash;
+}
+
+/**
+ * @param {number} type - The type of shader
+ * @param {string} source - The shader source code
+ * @param {string[]} [keywords] - Optional keywords to add
+ * @returns {WebGLShader} The compiled shader
+ */
+function compileShader(type: number, source: string, keywords?: string[]): WebGLShader {
+    source = addKeywords(source, keywords);
+
+    const shader = gl.createShader(type);
+    if (!shader) {
+        throw new Error('Failed to create WebGL shader');
+    }
+    
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+        console.trace(gl.getShaderInfoLog(shader));
+
+    return shader;
 }
