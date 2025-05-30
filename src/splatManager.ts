@@ -133,6 +133,8 @@ export const handlePointerSplat = (
         deltaY: number;
         texcoordX: number;
         texcoordY: number;
+        prevTexcoordX: number;
+        prevTexcoordY: number;
         color: RGBColor;
     },
     config: SplatConfig,
@@ -143,15 +145,32 @@ export const handlePointerSplat = (
     splatProgram: SplatProgram,
     blit: (target: BaseFBO | null) => void
 ): void => {
-    const dx = pointer.deltaX * config.SPLAT_FORCE;
-    const dy = pointer.deltaY * config.SPLAT_FORCE;
+    // Calculate velocity magnitude from mouse movement
+    const speed = Math.sqrt(pointer.deltaX * pointer.deltaX + pointer.deltaY * pointer.deltaY);
+    
+    // Base values
+    const baseRadius = config.SPLAT_RADIUS;
+    const baseForce = config.SPLAT_FORCE;
+    
+    // Scale radius and force based on velocity
+    // Faster movement = smaller radius but more force
+    const dynamicRadius = baseRadius * (1.0 / (1 + speed * 10));
+    const dynamicForce = baseForce * (1 + speed * 2);
+    
+    // For fast movements, create multiple splats along the movement path
+    const numExtraSplats = Math.floor(speed * 20); // More splats for faster movement
+    
+    // Create main splat
     applySplat(
         gl,
-        config,
+        {
+            SPLAT_FORCE: dynamicForce,
+            SPLAT_RADIUS: dynamicRadius
+        },
         pointer.texcoordX,
         pointer.texcoordY,
-        dx,
-        dy,
+        pointer.deltaX * dynamicForce,
+        pointer.deltaY * dynamicForce,
         pointer.color,
         velocity,
         dye,
@@ -159,6 +178,31 @@ export const handlePointerSplat = (
         splatProgram,
         blit
     );
+    
+    // Create additional splats along the movement path for faster movements
+    for (let i = 1; i <= numExtraSplats; i++) {
+        const t = i / (numExtraSplats + 1);
+        const x = pointer.prevTexcoordX + (pointer.texcoordX - pointer.prevTexcoordX) * t;
+        const y = pointer.prevTexcoordY + (pointer.texcoordY - pointer.prevTexcoordY) * t;
+        
+        applySplat(
+            gl,
+            {
+                SPLAT_FORCE: dynamicForce * 0.5, // Reduced force for intermediate splats
+                SPLAT_RADIUS: dynamicRadius * 1.2 // Slightly larger radius to ensure overlap
+            },
+            x,
+            y,
+            pointer.deltaX * dynamicForce * 0.5,
+            pointer.deltaY * dynamicForce * 0.5,
+            pointer.color,
+            velocity,
+            dye,
+            canvas,
+            splatProgram,
+            blit
+        );
+    }
 };
 
 /**

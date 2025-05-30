@@ -8,7 +8,7 @@ import { drawColor as drawBackgroundColor, getRandomColor, initColorShaders, set
 import { applyCurl, applyDivergence, applyGradientSubtract, applyPressure, applyVorticity, initPhysicsShaders } from './physicsManager';
 import {
     applyAdvection,
-    applySplat as applyPointerSplat,
+    handlePointerSplat,
     initSplatShaders
 } from './splatManager';
 import { applySunrays, applySunraysBlur, initSunraysFramebuffers, initSunraysShaders } from './sunraysManager';
@@ -978,19 +978,21 @@ function drawDisplay(target: FBO | null): void {
  * @returns {void}
  */
 function handleSplat(pointer: Pointer): void {
-    const dx = pointer.deltaX * config.SPLAT_FORCE;
-    const dy = pointer.deltaY * config.SPLAT_FORCE;
-    applyPointerSplat(
-        gl,
+    handlePointerSplat(
+        {
+            deltaX: pointer.deltaX,
+            deltaY: pointer.deltaY,
+            texcoordX: pointer.texcoordX,
+            texcoordY: pointer.texcoordY,
+            prevTexcoordX: pointer.prevTexcoordX,
+            prevTexcoordY: pointer.prevTexcoordY,
+            color: pointer.color
+        },
         {
             SPLAT_FORCE: config.SPLAT_FORCE,
             SPLAT_RADIUS: config.SPLAT_RADIUS
         },
-        pointer.texcoordX,
-        pointer.texcoordY,
-        dx,
-        dy,
-        pointer.color,
+        gl,
         velocity,
         dye,
         canvas,
