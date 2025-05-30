@@ -1,10 +1,12 @@
 // Sunrays management utilities using functional programming
 
 // Import shader source code
-import BLUR_SHADER from './shaders/blurShader.glsl';
-import BLUR_VERTEX_SHADER from './shaders/blurVertexShader.glsl';
-import SUNRAYS_MASK_SHADER from './shaders/sunraysMaskShader.glsl';
-import SUNRAYS_SHADER from './shaders/sunraysShader.glsl';
+import {
+    blurShader as blurShaderSource,
+    blurVertexShader as blurVertexShaderSource,
+    sunraysMaskShader as sunraysMaskShaderSource,
+    sunraysShader as sunraysShaderSource
+} from './shaders';
 import { BaseFBO, SunraysConfig, SunraysPrograms } from './types';
 
 // Internal state - only tracking framebuffers
@@ -32,16 +34,16 @@ export const initSunraysShaders = (
     blurVertexShader: WebGLShader;
     blurShader: WebGLShader;
 } => {
-    const sunraysMaskShader = compileShader(gl.FRAGMENT_SHADER, SUNRAYS_MASK_SHADER);
-    const sunraysShader = compileShader(gl.FRAGMENT_SHADER, SUNRAYS_SHADER);
-    const blurVertexShader = compileShader(gl.VERTEX_SHADER, BLUR_VERTEX_SHADER);
-    const blurShader = compileShader(gl.FRAGMENT_SHADER, BLUR_SHADER);
+    const compiledSunraysMaskShader = compileShader(gl.FRAGMENT_SHADER, sunraysMaskShaderSource);
+    const compiledSunraysShader = compileShader(gl.FRAGMENT_SHADER, sunraysShaderSource);
+    const compiledBlurVertexShader = compileShader(gl.VERTEX_SHADER, blurVertexShaderSource);
+    const compiledBlurShader = compileShader(gl.FRAGMENT_SHADER, blurShaderSource);
 
     return {
-        sunraysMaskShader,
-        sunraysShader,
-        blurVertexShader,
-        blurShader
+        sunraysMaskShader: compiledSunraysMaskShader,
+        sunraysShader: compiledSunraysShader,
+        blurVertexShader: compiledBlurVertexShader,
+        blurShader: compiledBlurShader
     };
 };
 

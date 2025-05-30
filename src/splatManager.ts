@@ -1,8 +1,10 @@
 // Splat management utilities using functional programming
 
 // Import shader source code
-import ADVECTION_SHADER from './shaders/advectionShader.glsl';
-import SPLAT_SHADER from './shaders/splatShader.glsl';
+import {
+    advectionShader as advectionShaderSource,
+    splatShader as splatShaderSource
+} from './shaders';
 import { BaseFBO, DoubleFBO, Pointer, RGBColor, SplatConfig, SplatProgram } from './types';
 
 /**
@@ -17,15 +19,15 @@ export const initSplatShaders = (
     splatShader: WebGLShader;
     advectionShader: WebGLShader;
 } => {
-    const splatShader = compileShader(gl.FRAGMENT_SHADER, SPLAT_SHADER);
-    const advectionShader = compileShader(
+    const compiledSplatShader = compileShader(gl.FRAGMENT_SHADER, splatShaderSource);
+    const compiledAdvectionShader = compileShader(
         gl.FRAGMENT_SHADER,
-        ADVECTION_SHADER,
+        advectionShaderSource,
         supportLinearFiltering ? undefined : ['MANUAL_FILTERING']
     );
     return { 
-        splatShader,
-        advectionShader
+        splatShader: compiledSplatShader,
+        advectionShader: compiledAdvectionShader
     };
 };
 

@@ -1,6 +1,6 @@
 // Color management utilities using functional programming
 import { ColorConfiguration, colorConfigurations } from './colorConfigurations';
-import COLOR_SHADER from './shaders/colorShader.glsl';
+import { colorShader as colorShaderSource } from './shaders';
 import { FBO, HSLAColor, Program, RGBColor } from './types';
 
 // Internal state for color management
@@ -133,8 +133,8 @@ export const initColorShaders = (
     baseVertexShader: WebGLShader,
     compileShader: (type: number, source: string) => WebGLShader
 ): { colorShader: WebGLShader } => {
-    const colorShader = compileShader(gl.FRAGMENT_SHADER, COLOR_SHADER);
-    return { colorShader };
+    const compiledColorShader = compileShader(gl.FRAGMENT_SHADER, colorShaderSource);
+    return { colorShader: compiledColorShader };
 };
 
 /**

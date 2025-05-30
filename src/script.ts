@@ -1,12 +1,14 @@
 'use strict';
-
 import { ColorConfiguration } from './colorConfigurations';
+import { clearShader, displayShaderSource } from './shaders';
 
 // Import managers for their functionality
 import { applyBloom, initBloomFramebuffers, initBloomShaders } from './bloomManager';
 import { drawColor as drawBackgroundColor, getRandomColor, initColorShaders, setColorScheme } from './colorManager';
 import { applyCurl, applyDivergence, applyGradientSubtract, applyPressure, applyVorticity, initPhysicsShaders } from './physicsManager';
 import { PointerManager, } from './pointerManager';
+import baseVertexShaderSource from "./shaders/baseVertexShader.glsl";
+import copyShaderSource from "./shaders/copyShader.glsl";
 import {
     applyAdvection,
     handlePointerSplat,
@@ -79,6 +81,12 @@ initColorScheme();
 const { gl, ext }: WebGLContext = getWebGLContext(canvas);
 
 let halfFloat: OES_texture_half_float | null;
+
+// compile shaders as needed
+const baseVertexShaderCompiled = compileShader(gl.VERTEX_SHADER, baseVertexShaderSource);
+const copyShaderCompiled = compileShader(gl.FRAGMENT_SHADER, copyShaderSource);
+const clearShaderCompiled = compileShader(gl.FRAGMENT_SHADER, clearShader);
+const displayShaderCompiled = compileShader(gl.FRAGMENT_SHADER, displayShaderSource);
 
 /**
  * @param {HTMLCanvasElement} canvas - The canvas element
@@ -256,17 +264,23 @@ class Program<T extends ShaderUniforms = ShaderUniforms> {
 // Update the Material class to use ShaderUniforms
 class Material {
     private vertexShader: WebGLShader;
-    private fragmentShaderSource: string;
+    private fragmentShader: WebGLShader;
     private programs: { [key: number]: WebGLProgram };
     private activeProgram: WebGLProgram | null;
     public uniforms: ShaderUniforms;
 
-    constructor(vertexShader: WebGLShader, fragmentShaderSource: string) {
+    constructor(vertexShader: WebGLShader, fragmentShader: WebGLShader) {
         this.vertexShader = vertexShader;
-        this.fragmentShaderSource = fragmentShaderSource;
+        this.fragmentShader = fragmentShader;
         this.programs = {};
         this.activeProgram = null;
         this.uniforms = {};
+        
+        // Initialize with default program
+        const program = createProgram(this.vertexShader, this.fragmentShader);
+        this.programs[0] = program;
+        this.activeProgram = program;
+        this.uniforms = getUniforms(program);
     }
 
     setKeywords(keywords: string[]) {
@@ -276,8 +290,7 @@ class Material {
 
         let program = this.programs[hash];
         if (program == null) {
-            let fragmentShader = compileShader(gl.FRAGMENT_SHADER, this.fragmentShaderSource, keywords);
-            program = createProgram(this.vertexShader, fragmentShader);
+            program = createProgram(this.vertexShader, this.fragmentShader);
             this.programs[hash] = program;
         }
 
@@ -328,112 +341,6 @@ function addKeywords(source: string, keywords?: string[]): string {
     return keywordsString + source;
 }
 
-/** @type {WebGLShader} */
-const baseVertexShader = compileShader(gl.VERTEX_SHADER, `
-    precision highp float;
-
-    attribute vec2 aPosition;
-    varying vec2 vUv;
-    varying vec2 vL;
-    varying vec2 vR;
-    varying vec2 vT;
-    varying vec2 vB;
-    uniform vec2 texelSize;
-
-    void main () {
-        vUv = aPosition * 0.5 + 0.5;
-        vL = vUv - vec2(texelSize.x, 0.0);
-        vR = vUv + vec2(texelSize.x, 0.0);
-        vT = vUv + vec2(0.0, texelSize.y);
-        vB = vUv - vec2(0.0, texelSize.y);
-        gl_Position = vec4(aPosition, 0.0, 1.0);
-    }
-`);
-
-/** @type {WebGLShader} */
-const copyShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    precision mediump sampler2D;
-
-    varying highp vec2 vUv;
-    uniform sampler2D uTexture;
-
-    void main () {
-        gl_FragColor = texture2D(uTexture, vUv);
-    }
-`);
-
-/** @type {WebGLShader} */
-const clearShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision mediump float;
-    precision mediump sampler2D;
-
-    varying highp vec2 vUv;
-    uniform sampler2D uTexture;
-    uniform float value;
-
-    void main () {
-        gl_FragColor = value * texture2D(uTexture, vUv);
-    }
-`);
-
-/** @type {string} */
-const displayShaderSource = `
-    precision highp float;
-    precision highp sampler2D;
-
-    varying vec2 vUv;
-    varying vec2 vL;
-    varying vec2 vR;
-    varying vec2 vT;
-    varying vec2 vB;
-    uniform sampler2D uTexture;
-    uniform sampler2D uBloom;
-    uniform sampler2D uSunrays;
-    uniform sampler2D uDithering;
-    uniform vec2 ditherScale;
-    uniform vec2 texelSize;
-
-    vec3 linearToGamma (vec3 color) {
-        color = max(color, vec3(0));
-        return max(1.055 * pow(color, vec3(0.416666667)) - 0.055, vec3(0));
-    }
-
-    void main () {
-        vec3 c = texture2D(uTexture, vUv).rgb;
-
-        vec3 lc = texture2D(uTexture, vL).rgb;
-        vec3 rc = texture2D(uTexture, vR).rgb;
-        vec3 tc = texture2D(uTexture, vT).rgb;
-        vec3 bc = texture2D(uTexture, vB).rgb;
-
-        float dx = length(rc) - length(lc);
-        float dy = length(tc) - length(bc);
-
-        vec3 n = normalize(vec3(dx, dy, length(texelSize)));
-        vec3 l = vec3(0.0, 0.0, 1.0);
-
-        float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
-        c *= diffuse;
-
-        vec3 bloom = texture2D(uBloom, vUv).rgb;
-
-        float sunrays = texture2D(uSunrays, vUv).r;
-        c *= sunrays;
-        bloom *= sunrays;
-
-        float noise = texture2D(uDithering, vUv * ditherScale).r;
-        noise = noise * 2.0 - 1.0;
-        bloom += noise / 255.0;
-        bloom = linearToGamma(bloom);
-        c += bloom;
-
-        float a = max(c.r, max(c.g, c.b));
-        gl_FragColor = vec4(c, a);
-    }
-`;
-
-
 const blit = (() => {
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
@@ -482,35 +389,35 @@ let ditheringTexture: {
 } = createTextureAsync('/src/LDR_LLL1_0.png');
 
 // Initialize physics shaders
-const physicsShaders = initPhysicsShaders(gl, baseVertexShader, compileShader);
+const physicsShaders = initPhysicsShaders(gl, baseVertexShaderCompiled, (type: number, source: string) => compileShader(type, source));
 
-const pressureProgram = new Program<PhysicsPrograms['pressure']['uniforms']>(baseVertexShader, physicsShaders.pressureShader);
-const divergenceProgram = new Program<PhysicsPrograms['divergence']['uniforms']>(baseVertexShader, physicsShaders.divergenceShader);
-const curlProgram = new Program<PhysicsPrograms['curl']['uniforms']>(baseVertexShader, physicsShaders.curlShader);
-const vorticityProgram = new Program<PhysicsPrograms['vorticity']['uniforms']>(baseVertexShader, physicsShaders.vorticityShader);
-const gradienSubtractProgram = new Program<PhysicsPrograms['gradientSubtract']['uniforms']>(baseVertexShader, physicsShaders.gradientSubtractShader);
+const pressureProgram = new Program<PhysicsPrograms['pressure']['uniforms']>(baseVertexShaderCompiled, physicsShaders.pressureShader);
+const divergenceProgram = new Program<PhysicsPrograms['divergence']['uniforms']>(baseVertexShaderCompiled, physicsShaders.divergenceShader);
+const curlProgram = new Program<PhysicsPrograms['curl']['uniforms']>(baseVertexShaderCompiled, physicsShaders.curlShader);
+const vorticityProgram = new Program<PhysicsPrograms['vorticity']['uniforms']>(baseVertexShaderCompiled, physicsShaders.vorticityShader);
+const gradienSubtractProgram = new Program<PhysicsPrograms['gradientSubtract']['uniforms']>(baseVertexShaderCompiled, physicsShaders.gradientSubtractShader);
 
-const sunraysShaders = initSunraysShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
-const sunraysMaskProgram = new Program<SunraysPrograms['sunraysMask']['uniforms']>(baseVertexShader, sunraysShaders.sunraysMaskShader);
-const sunraysProgram = new Program<SunraysPrograms['sunrays']['uniforms']>(baseVertexShader, sunraysShaders.sunraysShader);
-const blurProgram = new Program<BlurProgram['uniforms']>(baseVertexShader, sunraysShaders.blurShader);
+const sunraysShaders = initSunraysShaders(gl, baseVertexShaderCompiled, (type: number, source: string) => compileShader(type, source));
+const sunraysMaskProgram = new Program<SunraysPrograms['sunraysMask']['uniforms']>(baseVertexShaderCompiled, sunraysShaders.sunraysMaskShader);
+const sunraysProgram = new Program<SunraysPrograms['sunrays']['uniforms']>(baseVertexShaderCompiled, sunraysShaders.sunraysShader);
+const blurProgram = new Program<BlurProgram['uniforms']>(baseVertexShaderCompiled, sunraysShaders.blurShader);
 
-const bloomShaders = initBloomShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
-const bloomPrefilterProgram = new Program<BloomPrograms['bloomPrefilter']['uniforms']>(baseVertexShader, bloomShaders.bloomPrefilterShader);
-const bloomBlurProgram = new Program<BloomPrograms['bloomBlur']['uniforms']>(baseVertexShader, bloomShaders.bloomBlurShader);
-const bloomFinalProgram = new Program<BloomPrograms['bloomFinal']['uniforms']>(baseVertexShader, bloomShaders.bloomFinalShader);
+const bloomShaders = initBloomShaders(gl, baseVertexShaderCompiled, (type: number, source: string) => compileShader(type, source));
+const bloomPrefilterProgram = new Program<BloomPrograms['bloomPrefilter']['uniforms']>(baseVertexShaderCompiled, bloomShaders.bloomPrefilterShader);
+const bloomBlurProgram = new Program<BloomPrograms['bloomBlur']['uniforms']>(baseVertexShaderCompiled, bloomShaders.bloomBlurShader);
+const bloomFinalProgram = new Program<BloomPrograms['bloomFinal']['uniforms']>(baseVertexShaderCompiled, bloomShaders.bloomFinalShader);
 
-const splatShaders = initSplatShaders(gl, baseVertexShader, compileShader, ext.supportLinearFiltering);
-const splatProgram = new Program<SplatProgram['uniforms']>(baseVertexShader, splatShaders.splatShader);
-const advectionProgram = new Program<AdvectionProgram['uniforms']>(baseVertexShader, splatShaders.advectionShader);
+const splatShaders = initSplatShaders(gl, baseVertexShaderCompiled, (type: number, source: string) => compileShader(type, source), ext.supportLinearFiltering);
+const splatProgram = new Program<SplatProgram['uniforms']>(baseVertexShaderCompiled, splatShaders.splatShader);
+const advectionProgram = new Program<AdvectionProgram['uniforms']>(baseVertexShaderCompiled, splatShaders.advectionShader);
 
-const colorShaders = initColorShaders(gl, baseVertexShader, compileShader);
-const colorProgram = new Program<ColorProgram['uniforms']>(baseVertexShader, colorShaders.colorShader);
+const colorShaders = initColorShaders(gl, baseVertexShaderCompiled, (type: number, source: string) => compileShader(type, source));
+const colorProgram = new Program<ColorProgram['uniforms']>(baseVertexShaderCompiled, colorShaders.colorShader);
 
-const copyProgram = new Program(baseVertexShader, copyShader);
-const clearProgram = new Program(baseVertexShader, clearShader);
+const copyProgram = new Program(baseVertexShaderCompiled, copyShaderCompiled);
+const clearProgram = new Program(baseVertexShaderCompiled, clearShaderCompiled);
 
-const displayMaterial = new Material(baseVertexShader, displayShaderSource);
+const displayMaterial = new Material(baseVertexShaderCompiled, displayShaderCompiled);
 
 /**
  * @returns {void}

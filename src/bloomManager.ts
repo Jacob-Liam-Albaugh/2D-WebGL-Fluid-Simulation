@@ -1,9 +1,11 @@
 // Bloom management utilities using functional programming
 
 // Import shader source code
-import BLOOM_BLUR_SHADER from './shaders/bloomBlurShader.glsl';
-import BLOOM_FINAL_SHADER from './shaders/bloomFinalShader.glsl';
-import BLOOM_PREFILTER_SHADER from './shaders/bloomPrefilterShader.glsl';
+import {
+    bloomBlurShader as bloomBlurShaderSource,
+    bloomFinalShader as bloomFinalShaderSource,
+    bloomPrefilterShader as bloomPrefilterShaderSource
+} from './shaders';
 import { BaseFBO, BloomConfig, BloomPrograms } from './types';
 
 // Internal state - only tracking framebuffers
@@ -24,14 +26,14 @@ export const initBloomShaders = (
     bloomBlurShader: WebGLShader;
     bloomFinalShader: WebGLShader;
 } => {
-    const bloomPrefilterShader = compileShader(gl.FRAGMENT_SHADER, BLOOM_PREFILTER_SHADER);
-    const bloomBlurShader = compileShader(gl.FRAGMENT_SHADER, BLOOM_BLUR_SHADER);
-    const bloomFinalShader = compileShader(gl.FRAGMENT_SHADER, BLOOM_FINAL_SHADER);
+    const compiledPrefilterShader = compileShader(gl.FRAGMENT_SHADER, bloomPrefilterShaderSource);
+    const compiledBlurShader = compileShader(gl.FRAGMENT_SHADER, bloomBlurShaderSource);
+    const compiledFinalShader = compileShader(gl.FRAGMENT_SHADER, bloomFinalShaderSource);
 
     return {
-        bloomPrefilterShader,
-        bloomBlurShader,
-        bloomFinalShader
+        bloomPrefilterShader: compiledPrefilterShader,
+        bloomBlurShader: compiledBlurShader,
+        bloomFinalShader: compiledFinalShader
     };
 };
 

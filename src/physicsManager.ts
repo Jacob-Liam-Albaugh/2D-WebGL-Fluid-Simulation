@@ -1,11 +1,13 @@
 // Physics and fluid dynamics management utilities using functional programming
 
 // Import shader source code from existing files
-import CURL_SHADER from './shaders/curlShader.glsl';
-import DIVERGENCE_SHADER from './shaders/divergenceShader.glsl';
-import GRADIENT_SUBTRACT_SHADER from './shaders/gradientSubtractShader.glsl';
-import PRESSURE_SHADER from './shaders/pressureShader.glsl';
-import VORTICITY_SHADER from './shaders/vorticityShader.glsl';
+import {
+    curlShader as curlShaderSource,
+    divergenceShader as divergenceShaderSource,
+    gradientSubtractShader as gradientSubtractShaderSource,
+    pressureShader as pressureShaderSource,
+    vorticityShader as vorticityShaderSource
+} from './shaders';
 import { BaseFBO, DoubleFBO, PhysicsConfig, PhysicsPrograms } from './types';
 
 /**
@@ -22,18 +24,18 @@ export const initPhysicsShaders = (
     vorticityShader: WebGLShader;
     gradientSubtractShader: WebGLShader;
 } => {
-    const pressureShader = compileShader(gl.FRAGMENT_SHADER, PRESSURE_SHADER);
-    const divergenceShader = compileShader(gl.FRAGMENT_SHADER, DIVERGENCE_SHADER);
-    const curlShader = compileShader(gl.FRAGMENT_SHADER, CURL_SHADER);
-    const vorticityShader = compileShader(gl.FRAGMENT_SHADER, VORTICITY_SHADER);
-    const gradientSubtractShader = compileShader(gl.FRAGMENT_SHADER, GRADIENT_SUBTRACT_SHADER);
+    const compiledPressureShader = compileShader(gl.FRAGMENT_SHADER, pressureShaderSource);
+    const compiledDivergenceShader = compileShader(gl.FRAGMENT_SHADER, divergenceShaderSource);
+    const compiledCurlShader = compileShader(gl.FRAGMENT_SHADER, curlShaderSource);
+    const compiledVorticityShader = compileShader(gl.FRAGMENT_SHADER, vorticityShaderSource);
+    const compiledGradientSubtractShader = compileShader(gl.FRAGMENT_SHADER, gradientSubtractShaderSource);
 
     return {
-        pressureShader,
-        divergenceShader,
-        curlShader,
-        vorticityShader,
-        gradientSubtractShader
+        pressureShader: compiledPressureShader,
+        divergenceShader: compiledDivergenceShader,
+        curlShader: compiledCurlShader,
+        vorticityShader: compiledVorticityShader,
+        gradientSubtractShader: compiledGradientSubtractShader
     };
 };
 
