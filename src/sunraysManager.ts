@@ -1,5 +1,11 @@
 // Sunrays management utilities using functional programming
 
+// Import shader source code
+import BLUR_SHADER from './shaders/blurShader.glsl';
+import BLUR_VERTEX_SHADER from './shaders/blurVertexShader.glsl';
+import SUNRAYS_MASK_SHADER from './shaders/sunraysMaskShader.glsl';
+import SUNRAYS_SHADER from './shaders/sunraysShader.glsl';
+
 /**
  * Interface for Sunrays configuration
  */
@@ -21,6 +27,24 @@ export interface SunraysFramebuffer {
     attach: (id: number) => number;
 }
 
+/**
+ * Interface for Sunrays Programs
+ */
+export interface SunraysPrograms {
+    sunraysMask: { 
+        bind: () => void; 
+        uniforms: { uTexture: WebGLUniformLocation } 
+    };
+    sunrays: { 
+        bind: () => void; 
+        uniforms: { weight: WebGLUniformLocation; uTexture: WebGLUniformLocation } 
+    };
+    blur: {
+        bind: () => void;
+        uniforms: { texelSize: WebGLUniformLocation; uTexture: WebGLUniformLocation }
+    };
+}
+
 // Internal state - only tracking framebuffers
 let sunraysFramebuffers: {
     sunrays: SunraysFramebuffer | null;
@@ -28,6 +52,35 @@ let sunraysFramebuffers: {
 } = {
     sunrays: null,
     temp: null
+};
+
+/**
+ * Initialize sunrays shaders
+ * @param gl - WebGL context
+ * @param baseVertexShader - Base vertex shader
+ * @param compileShader - Function to compile shader
+ */
+export const initSunraysShaders = (
+    gl: WebGLRenderingContext,
+    baseVertexShader: WebGLShader,
+    compileShader: (type: number, source: string) => WebGLShader
+): { 
+    sunraysMaskShader: WebGLShader; 
+    sunraysShader: WebGLShader;
+    blurVertexShader: WebGLShader;
+    blurShader: WebGLShader;
+} => {
+    const sunraysMaskShader = compileShader(gl.FRAGMENT_SHADER, SUNRAYS_MASK_SHADER);
+    const sunraysShader = compileShader(gl.FRAGMENT_SHADER, SUNRAYS_SHADER);
+    const blurVertexShader = compileShader(gl.VERTEX_SHADER, BLUR_VERTEX_SHADER);
+    const blurShader = compileShader(gl.FRAGMENT_SHADER, BLUR_SHADER);
+
+    return {
+        sunraysMaskShader,
+        sunraysShader,
+        blurVertexShader,
+        blurShader
+    };
 };
 
 /**
@@ -110,4 +163,33 @@ export const applySunrays = (
  */
 export const getSunraysFramebuffers = (): { sunrays: SunraysFramebuffer | null; temp: SunraysFramebuffer | null } => {
     return { ...sunraysFramebuffers };
+};
+
+/**
+ * Apply blur effect to sunrays
+ * @param gl - WebGL context
+ * @param target - Target framebuffer
+ * @param temp - Temporary framebuffer
+ * @param iterations - Number of blur iterations
+ * @param blurProgram - Blur shader program
+ * @param blit - Blit function
+ */
+export const applySunraysBlur = (
+    gl: WebGLRenderingContext,
+    target: SunraysFramebuffer,
+    temp: SunraysFramebuffer,
+    iterations: number,
+    blurProgram: { bind: () => void; uniforms: { texelSize: WebGLUniformLocation; uTexture: WebGLUniformLocation } },
+    blit: (target: SunraysFramebuffer | null) => void
+): void => {
+    blurProgram.bind();
+    for (let i = 0; i < iterations; i++) {
+        gl.uniform2f(blurProgram.uniforms.texelSize, target.texelSizeX, 0.0);
+        gl.uniform1i(blurProgram.uniforms.uTexture, target.attach(0));
+        blit(temp);
+
+        gl.uniform2f(blurProgram.uniforms.texelSize, 0.0, target.texelSizeY);
+        gl.uniform1i(blurProgram.uniforms.uTexture, temp.attach(0));
+        blit(target);
+    }
 }; 

@@ -1,5 +1,10 @@
 // Bloom management utilities using functional programming
 
+// Import shader source code
+import BLOOM_BLUR_SHADER from './shaders/bloomBlurShader.glsl';
+import BLOOM_FINAL_SHADER from './shaders/bloomFinalShader.glsl';
+import BLOOM_PREFILTER_SHADER from './shaders/bloomPrefilterShader.glsl';
+
 /**
  * Interface for Bloom configuration
  */
@@ -24,8 +29,63 @@ export interface BloomFramebuffer {
     attach: (id: number) => number;
 }
 
-// Internal state - only tracking framebuffers, config comes from script.js
+/**
+ * Interface for Bloom Programs
+ */
+export interface BloomPrograms {
+    bloomPrefilter: { 
+        bind: () => void; 
+        uniforms: { 
+            curve: WebGLUniformLocation; 
+            threshold: WebGLUniformLocation; 
+            uTexture: WebGLUniformLocation 
+        } 
+    };
+    bloomBlur: { 
+        bind: () => void; 
+        uniforms: { 
+            texelSize: WebGLUniformLocation; 
+            uTexture: WebGLUniformLocation 
+        } 
+    };
+    bloomFinal: { 
+        bind: () => void; 
+        uniforms: { 
+            texelSize: WebGLUniformLocation; 
+            uTexture: WebGLUniformLocation; 
+            intensity: WebGLUniformLocation 
+        } 
+    };
+}
+
+// Internal state - only tracking framebuffers
 let bloomFramebuffers: BloomFramebuffer[] = [];
+
+/**
+ * Initialize bloom shaders
+ * @param gl - WebGL context
+ * @param baseVertexShader - Base vertex shader
+ * @param compileShader - Function to compile shader
+ */
+export const initBloomShaders = (
+    gl: WebGLRenderingContext,
+    baseVertexShader: WebGLShader,
+    compileShader: (type: number, source: string) => WebGLShader
+): { 
+    bloomPrefilterShader: WebGLShader; 
+    bloomBlurShader: WebGLShader;
+    bloomFinalShader: WebGLShader;
+} => {
+    const bloomPrefilterShader = compileShader(gl.FRAGMENT_SHADER, BLOOM_PREFILTER_SHADER);
+    const bloomBlurShader = compileShader(gl.FRAGMENT_SHADER, BLOOM_BLUR_SHADER);
+    const bloomFinalShader = compileShader(gl.FRAGMENT_SHADER, BLOOM_FINAL_SHADER);
+
+    return {
+        bloomPrefilterShader,
+        bloomBlurShader,
+        bloomFinalShader
+    };
+};
 
 /**
  * Initialize bloom framebuffers based on resolution
