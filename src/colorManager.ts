@@ -1,5 +1,16 @@
 // Color management utilities using functional programming
 import { ColorConfiguration, colorConfigurations } from './colorConfigurations';
+import COLOR_SHADER from './shaders/colorShader.glsl';
+
+/**
+ * Interface for Program
+ */
+export interface Program {
+    bind: () => void;
+    uniforms: {
+        color: WebGLUniformLocation;
+    };
+}
 
 /**
  * Interface for RGB color representation
@@ -151,5 +162,32 @@ export const generateColor = (): RGBColor => {
         g: color.g * intensity,
         b: color.b * intensity
     };
+};
+
+/**
+ * Initialize color shaders
+ */
+export const initColorShaders = (
+    gl: WebGLRenderingContext,
+    baseVertexShader: WebGLShader,
+    compileShader: (type: number, source: string) => WebGLShader
+): { colorShader: WebGLShader } => {
+    const colorShader = compileShader(gl.FRAGMENT_SHADER, COLOR_SHADER);
+    return { colorShader };
+};
+
+/**
+ * Draw color
+ */
+export const drawColor = (
+    gl: WebGLRenderingContext,
+    target: any,
+    color: RGBColor,
+    colorProgram: Program,
+    blit: (target: any) => void
+): void => {
+    colorProgram.bind();
+    gl.uniform4f(colorProgram.uniforms.color, color.r, color.g, color.b, 1);
+    blit(target);
 };
 

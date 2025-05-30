@@ -27,6 +27,7 @@ SOFTWARE.
 // Import managers
 import { applyBloom, initBloomFramebuffers, initBloomShaders } from './bloomManager';
 import { getRandomColor, setColorScheme } from './colorManager';
+import { handlePointerSplat, initSplatShaders } from './splatManager';
 import { applySunrays, applySunraysBlur, initSunraysFramebuffers, initSunraysShaders } from './sunraysManager';
 
 // Simulation section
@@ -388,26 +389,6 @@ const displayShaderSource = `
     }
 `;
 
-const splatShader = compileShader(gl.FRAGMENT_SHADER, `
-    precision highp float;
-    precision highp sampler2D;
-
-    varying vec2 vUv;
-    uniform sampler2D uTarget;
-    uniform float aspectRatio;
-    uniform vec3 color;
-    uniform vec2 point;
-    uniform float radius;
-
-    void main () {
-        vec2 p = vUv - point.xy;
-        p.x *= aspectRatio;
-        vec3 splat = exp(-dot(p, p) / radius) * color;
-        vec3 base = texture2D(uTarget, vUv).xyz;
-        gl_FragColor = vec4(base + splat, 1.0);
-    }
-`);
-
 const advectionShader = compileShader(gl.FRAGMENT_SHADER, `
     precision highp float;
     precision highp sampler2D;
@@ -601,16 +582,10 @@ const blit = (() => {
             gl.clearColor(0.0, 0.0, 0.0, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
         }
-        // CHECK_FRAMEBUFFER_STATUS();
         gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     }
 })();
 
-function CHECK_FRAMEBUFFER_STATUS () {
-    let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status != gl.FRAMEBUFFER_COMPLETE)
-        console.trace("Framebuffer error: " + status);
-}
 
 let dye;
 let velocity;
@@ -624,11 +599,11 @@ let sunraysTemp;
 
 let ditheringTexture = createTextureAsync('/src/LDR_LLL1_0.png');
 
+// Initialize sunrays programs
 const sunraysShaders = initSunraysShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
+const sunraysMaskProgram     = new Program(baseVertexShader, sunraysShaders.sunraysMaskShader);
+const sunraysProgram         = new Program(baseVertexShader, sunraysShaders.sunraysShader);
 const blurProgram            = new Program(sunraysShaders.blurVertexShader, sunraysShaders.blurShader);
-const copyProgram            = new Program(baseVertexShader, copyShader);
-const clearProgram           = new Program(baseVertexShader, clearShader);
-const colorProgram           = new Program(baseVertexShader, colorShader);
 
 // Initialize bloom shaders and create programs
 const bloomShaders = initBloomShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
@@ -636,11 +611,13 @@ const bloomPrefilterProgram  = new Program(baseVertexShader, bloomShaders.bloomP
 const bloomBlurProgram       = new Program(baseVertexShader, bloomShaders.bloomBlurShader);
 const bloomFinalProgram      = new Program(baseVertexShader, bloomShaders.bloomFinalShader);
 
-// Initialize sunrays programs
-const sunraysMaskProgram     = new Program(baseVertexShader, sunraysShaders.sunraysMaskShader);
-const sunraysProgram         = new Program(baseVertexShader, sunraysShaders.sunraysShader);
+// Initialize splat program
+const splatShaders = initSplatShaders(gl, baseVertexShader, (type, source) => compileShader(type, source));
+const splatProgram           = new Program(baseVertexShader, splatShaders.splatShader);
 
-const splatProgram           = new Program(baseVertexShader, splatShader);
+const copyProgram            = new Program(baseVertexShader, copyShader);
+const clearProgram           = new Program(baseVertexShader, clearShader);
+const colorProgram           = new Program(baseVertexShader, colorShader);
 const advectionProgram       = new Program(baseVertexShader, advectionShader);
 const divergenceProgram      = new Program(baseVertexShader, divergenceShader);
 const curlProgram            = new Program(baseVertexShader, curlShader);
@@ -823,7 +800,6 @@ updateKeywords();
 initFramebuffers();
 
 let lastUpdateTime = Date.now();
-let colorUpdateTimer = 0.0;
 update();
 
 function update () {
@@ -952,13 +928,8 @@ function render (target) {
 
     applySunraysBlur(gl, sunrays, sunraysTemp, 1, blurProgram, blit);
 
-    if (target == null || !config.TRANSPARENT) {
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-        gl.enable(gl.BLEND);
-    }
-    else {
-        gl.disable(gl.BLEND);
-    }
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND);
 
     drawColor(target, config.BACK_COLOR);
     drawDisplay(target);
@@ -986,25 +957,19 @@ function drawDisplay (target) {
 }
 
 function splatPointer (pointer) {
-    let dx = pointer.deltaX * config.SPLAT_FORCE;
-    let dy = pointer.deltaY * config.SPLAT_FORCE;
-    splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color);
-}
-
-function splat (x, y, dx, dy, color) {
-    splatProgram.bind();
-    gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
-    gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width / canvas.height);
-    gl.uniform2f(splatProgram.uniforms.point, x, y);
-    gl.uniform3f(splatProgram.uniforms.color, dx, dy, 0.0);
-    gl.uniform1f(splatProgram.uniforms.radius, correctRadius(config.SPLAT_RADIUS / 100.0));
-    blit(velocity.write);
-    velocity.swap();
-
-    gl.uniform1i(splatProgram.uniforms.uTarget, dye.read.attach(0));
-    gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
-    blit(dye.write);
-    dye.swap();
+    handlePointerSplat(
+        pointer,
+        {
+            SPLAT_FORCE: config.SPLAT_FORCE,
+            SPLAT_RADIUS: config.SPLAT_RADIUS
+        },
+        gl,
+        velocity,
+        dye,
+        canvas,
+        splatProgram,
+        blit
+    );
 }
 
 function correctRadius (radius) {
@@ -1033,40 +998,6 @@ canvas.addEventListener('mousemove', e => {
 
 window.addEventListener('mouseup', () => {
     updatePointerUpData(pointers[0]);
-});
-
-canvas.addEventListener('touchstart', e => {
-    e.preventDefault();
-    const touches = e.targetTouches;
-    while (touches.length >= pointers.length)
-        pointers.push(new pointerPrototype());
-    for (let i = 0; i < touches.length; i++) {
-        let posX = scaleByPixelRatio(touches[i].pageX);
-        let posY = scaleByPixelRatio(touches[i].pageY);
-        updatePointerDownData(pointers[i + 1], touches[i].identifier, posX, posY);
-    }
-});
-
-canvas.addEventListener('touchmove', e => {
-    e.preventDefault();
-    const touches = e.targetTouches;
-    for (let i = 0; i < touches.length; i++) {
-        let pointer = pointers[i + 1];
-        if (!pointer.down) continue;
-        let posX = scaleByPixelRatio(touches[i].pageX);
-        let posY = scaleByPixelRatio(touches[i].pageY);
-        updatePointerMoveData(pointer, posX, posY);
-    }
-}, false);
-
-window.addEventListener('touchend', e => {
-    const touches = e.changedTouches;
-    for (let i = 0; i < touches.length; i++)
-    {
-        let pointer = pointers.find(p => p.id == touches[i].identifier);
-        if (pointer == null) continue;
-        updatePointerUpData(pointer);
-    }
 });
 
 function updatePointerDownData (pointer, id, posX, posY) {
@@ -1106,12 +1037,6 @@ function correctDeltaY (delta) {
     let aspectRatio = canvas.width / canvas.height;
     if (aspectRatio > 1) delta /= aspectRatio;
     return delta;
-}
-
-function wrap (value, min, max) {
-    let range = max - min;
-    if (range == 0) return min;
-    return (value - min) % range + min;
 }
 
 function getResolution (resolution) {

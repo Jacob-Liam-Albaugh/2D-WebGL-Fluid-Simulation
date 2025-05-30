@@ -33,4 +33,4 @@ void main () {
 #endif
     float decay = 1.0 + dissipation * dt;
     gl_FragColor = result / decay;
-}`
+}
