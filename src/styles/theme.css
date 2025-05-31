@@ -1,0 +1,274 @@
+:root {
+  --background: #ffffff;
+  --foreground: #1e1d31;
+  --text-secondary: #3c4257;
+  --code-background: #242933;
+  --border-color: #e5e7eb;
+  --primary: #5048e5;
+  --secondary: #10b981;
+}
+
+.dark {
+  --background: #0f0e18;
+  --foreground: #f4f4f4;
+  --text-secondary: #a9b3c1;
+  --code-background: #161b27;
+  --border-color: #1f2937;
+  --primary: #5048e5;
+  --secondary: #10b981;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Custom text selection/highlight styling */
+::selection {
+  background: var(--primary);
+  color: white;
+}
+
+::-moz-selection {
+  background: var(--primary);
+  color: white;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+/* Custom scrollbar styling */
+.overflow-x-auto::-webkit-scrollbar {
+  height: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.overflow-x-auto:hover::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.overflow-y-auto::-webkit-scrollbar {
+  width: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.overflow-y-auto:hover::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 1rem 0px 0px;
+}
+
+h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 1rem 0px 0px;
+}
+
+h3 {
+  font-size: 1.25rem;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  padding: 1rem 0px 0px;
+}
+
+h4 {
+  font-size: 1.2rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  padding: 1rem 0px 0px;
+}
+
+h5 {
+  font-size: 1.15rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  padding: 1rem 0px 0px;
+}
+
+h6 {
+  font-size: 1rem;
+  font-weight: 350;
+  letter-spacing: 0.01em;
+  padding: 1rem 0px 0px;
+}
+
+p {
+  font-size: 1rem;
+  font-weight: 350;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  padding: 0.5rem 0px 0px;
+}
+
+li {
+  @apply my-1;
+}
+
+ul {
+  @apply pl-5 mt-4;
+  list-style-type: disc;
+  color: var(--text-secondary);
+}
+
+ul li {
+  padding-left: 10px;
+}
+
+ul li::marker {
+  color: rgba(156, 163, 175, 0.8);
+}
+
+ol {
+  @apply list-decimal pl-5 mb-4;
+  color: var(--text-secondary);
+}
+
+ol li::marker {
+  color: rgba(156, 163, 175, 0.8);
+}
+
+table {
+  @apply w-full border-collapse;
+  margin-bottom: 1rem;
+}
+
+tr {
+  @apply border-b border-gray-200;
+}
+
+th {
+  @apply text-sm font-bold;
+  padding: 0.5rem;
+}
+
+td {
+  @apply text-sm;
+  padding: 0.5rem;
+}
+
+a {
+  @apply text-primary-500 hover:text-primary-700;
+}
+
+blockquote {
+  @apply border-l-4 border-gray-300 pl-4 mt-6 mb-4;
+  padding-bottom: 8px;
+}
+
+blockquote p {
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+blockquote h4 {
+  padding-top: 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+@theme {
+  --color-black: #000;
+  --color-white: #fff;
+  --color-text-secondary: var(--text-secondary);
+
+  --color-code-background: var(--code-background);
+  --color-secondary: var(--secondary);
+  --color-secondary-50: color-mix(in srgb, var(--secondary) 5%, #f4f4f4);
+  --color-secondary-100: color-mix(in srgb, var(--secondary) 10%, #f4f4f4);
+  --color-secondary-200: color-mix(in srgb, var(--secondary) 20%, #f4f4f4);
+  --color-secondary-300: color-mix(in srgb, var(--secondary) 30%, #f4f4f4);
+  --color-secondary-400: color-mix(in srgb, var(--secondary) 40%, #f4f4f4);
+  --color-secondary-500: var(--secondary);
+  --color-secondary-600: color-mix(in srgb, var(--secondary) 60%, #1c1c1c);
+  --color-secondary-700: color-mix(in srgb, var(--secondary) 70%, #1c1c1c);
+  --color-secondary-800: color-mix(in srgb, var(--secondary) 80%, #1c1c1c);
+  --color-secondary-900: color-mix(in srgb, var(--secondary) 90%, #1c1c1c);
+
+  --color-primary: var(--primary);
+  --color-primary-50: color-mix(in srgb, var(--primary) 5%, #f4f4f4);
+  --color-primary-100: color-mix(in srgb, var(--primary) 10%, #f4f4f4);
+  --color-primary-200: color-mix(in srgb, var(--primary) 20%, #f4f4f4);
+  --color-primary-300: color-mix(in srgb, var(--primary) 30%, #f4f4f4);
+  --color-primary-400: color-mix(in srgb, var(--primary) 40%, #f4f4f4);
+  --color-primary-500: var(--primary);
+  --color-primary-600: color-mix(in srgb, var(--primary) 60%, #1c1c1c);
+  --color-primary-700: color-mix(in srgb, var(--primary) 70%, #1c1c1c);
+  --color-primary-800: color-mix(in srgb, var(--primary) 80%, #1c1c1c);
+  --color-primary-900: color-mix(in srgb, var(--primary) 90%, #1c1c1c);
+
+  --color-background: var(--background);
+  --color-background-50: color-mix(
+    in srgb,
+    var(--background) 5%,
+    var(--primary)
+  );
+  --color-background-100: color-mix(
+    in srgb,
+    var(--background) 10%,
+    var(--primary)
+  );
+  --color-background-200: color-mix(
+    in srgb,
+    var(--background) 20%,
+    var(--primary)
+  );
+  --color-background-300: color-mix(
+    in srgb,
+    var(--background) 30%,
+    var(--primary)
+  );
+  --color-background-400: color-mix(
+    in srgb,
+    var(--background) 40%,
+    var(--primary)
+  );
+  --color-background-500: var(--background);
+  --color-background-600: color-mix(
+    in srgb,
+    var(--background) 60%,
+    var(--primary)
+  );
+  --color-background-700: color-mix(
+    in srgb,
+    var(--background) 70%,
+    var(--primary)
+  );
+  --color-background-800: color-mix(
+    in srgb,
+    var(--background) 80%,
+    var(--primary)
+  );
+  --color-background-900: color-mix(
+    in srgb,
+    var(--background) 90%,
+    var(--primary)
+  );
+
+  --font-primary: "Inter", Arial, Helvetica, sans-serif;
+}
+@source "../../dist";

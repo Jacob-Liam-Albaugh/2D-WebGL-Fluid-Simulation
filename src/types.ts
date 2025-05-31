@@ -8,7 +8,7 @@ export interface WebGLContext {
         formatRG: { internalFormat: number; format: number } | null;
         formatR: { internalFormat: number; format: number } | null;
         halfFloatTexType: number;
-        supportLinearFiltering: boolean | null;
+        supportLinearFiltering: boolean;
     };
 }
 
@@ -248,7 +248,7 @@ export interface WebGLContext {
       formatRG: { internalFormat: number; format: number } | null;
       formatR: { internalFormat: number; format: number } | null;
       halfFloatTexType: number;
-      supportLinearFiltering: boolean | null;
+      supportLinearFiltering: boolean;
   };
 }
 

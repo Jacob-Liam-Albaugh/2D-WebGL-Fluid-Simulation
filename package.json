@@ -1,4 +1,8 @@
 {
+  "name": "@augno/ui",
+  "description": "A collection of react components and other user interface utilities for Augno.",
+  "version": "0.7.5",
+  "author": "Augno, Inc.",
   "type": "module",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -30,9 +34,7 @@
     "test": "jest",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "yalc-publish": "bun run build && yalc publish",
-    "dev": "vite",
-    "preview": "vite preview"
+    "yalc-publish": "bun run build && yalc publish"
   },
   "devDependencies": {
     "@babel/cli": "^7.27.2",
@@ -57,7 +59,6 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/bun": "latest",
     "@types/jest": "^29.5.14",
-    "@types/node": "^22.15.24",
     "@types/react": "^19.1.4",
     "autoprefixer": "^10.4.21",
     "babel-plugin-inline-import": "^3.0.0",
@@ -76,7 +77,6 @@
     "tslib": "^2.8.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
     "vite-plugin-glsl": "^1.4.1"
   },
   "peerDependencies": {
@@ -93,7 +93,5 @@
     "unified": "^11.0.5",
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.7"
-  },
-  "name": "webgl-fluid-simulation",
-  "private": true
+  }
 }
